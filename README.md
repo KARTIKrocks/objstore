@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/KARTIKrocks/objstore.svg)](https://pkg.go.dev/github.com/KARTIKrocks/objstore)
 [![Go Report Card](https://goreportcard.com/badge/github.com/KARTIKrocks/objstore)](https://goreportcard.com/report/github.com/KARTIKrocks/objstore)
-[![Go Version](https://img.shields.io/github/go-mod-go-version/KARTIKrocks/objstore)](go.mod)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/KARTIKrocks/objstore)](go.mod)
 [![CI](https://github.com/KARTIKrocks/objstore/actions/workflows/ci.yml/badge.svg)](https://github.com/KARTIKrocks/objstore/actions/workflows/ci.yml)
 [![GitHub tag](https://img.shields.io/github/v/tag/KARTIKrocks/objstore)](https://github.com/KARTIKrocks/objstore/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
