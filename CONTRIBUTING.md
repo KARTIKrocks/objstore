@@ -8,7 +8,7 @@ Thanks for your interest in contributing!
 2. Clone your fork: `git clone https://github.com/<username>/objstore.git`
 3. Create a branch: `git checkout -b my-feature`
 4. Make your changes
-5. Run checks: `make ci`
+5. Run checks: `make all`
 6. Push and open a pull request
 
 ## Development
@@ -48,7 +48,7 @@ make ci          # run all checks (tidy, fmt, lint, test across all modules)
 - Keep PRs focused on a single change
 - Include tests for new functionality
 - Update documentation if the public API changes
-- Ensure `make ci` passes before requesting review
+- Ensure `make all` passes before requesting review
 
 ## Reporting Issues
 

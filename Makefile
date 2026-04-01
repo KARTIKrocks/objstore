@@ -4,7 +4,7 @@ MODULES = . ./s3 ./gcs ./azure
 SUB_MODULES = ./s3 ./gcs ./azure
 MODULE_PATH = github.com/KARTIKrocks/objstore
 
-all: tidy fmt lint test
+all: fmt vet tidy fmt lint test
 
 ## Run all checks (CI)
 ci: tidy fmt vet lint test-race
