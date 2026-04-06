@@ -14,8 +14,8 @@ github.com/AzureAD/microsoft-authentication-extensions-for-go/cache v0.1.1 h1:WJ
 github.com/AzureAD/microsoft-authentication-extensions-for-go/cache v0.1.1/go.mod h1:tCcJZ0uHAmvjsVYzEFivsRTN00oz5BEsRgQHu5JZ9WE=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 h1:XRzhVemXdgvJqCH0sFfrBUTnUJSBrBf7++ypk+twtRs=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0/go.mod h1:HKpQxkWaGLJ+D/5H8QRpyQXA1eKjxkFlOMwck5+33Jk=
-github.com/KARTIKrocks/objstore v0.1.0 h1:2xt4ZDnI2Utj5Yd+IKdd77MA6Z3mUzsjyFnHCEJQMNE=
-github.com/KARTIKrocks/objstore v0.1.0/go.mod h1:UPdSl/uaI6PRSFSwmacu6H5qXZyYmFl0iuICm/mCK3s=
+github.com/KARTIKrocks/objstore v0.1.1 h1:pza6jtYdWO6sdHeKez0VsjD185/bOMbnVnh5Le+Tsk8=
+github.com/KARTIKrocks/objstore v0.1.1/go.mod h1:UPdSl/uaI6PRSFSwmacu6H5qXZyYmFl0iuICm/mCK3s=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/golang-jwt/jwt/v5 v5.3.0 h1:pv4AsKCKKZuqlgs5sUmn4x8UlGa0kEVt/puTpKx9vvo=
