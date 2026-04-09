@@ -1,5 +1,5 @@
-github.com/KARTIKrocks/objstore v0.1.0 h1:2xt4ZDnI2Utj5Yd+IKdd77MA6Z3mUzsjyFnHCEJQMNE=
-github.com/KARTIKrocks/objstore v0.1.0/go.mod h1:UPdSl/uaI6PRSFSwmacu6H5qXZyYmFl0iuICm/mCK3s=
+github.com/KARTIKrocks/objstore v0.1.1 h1:pza6jtYdWO6sdHeKez0VsjD185/bOMbnVnh5Le+Tsk8=
+github.com/KARTIKrocks/objstore v0.1.1/go.mod h1:UPdSl/uaI6PRSFSwmacu6H5qXZyYmFl0iuICm/mCK3s=
 github.com/aws/aws-sdk-go-v2 v1.41.5 h1:dj5kopbwUsVUVFgO4Fi5BIT3t4WyqIDjGKCangnV/yY=
 github.com/aws/aws-sdk-go-v2 v1.41.5/go.mod h1:mwsPRE8ceUUpiTgF7QmQIJ7lgsKUPQOUl3o72QBrE1o=
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.8 h1:eBMB84YGghSocM7PsjmmPffTa+1FBUeNvGvFou6V/4o=
