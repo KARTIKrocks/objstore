@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-04-01
+
+### Changed
+
+- Bumped AWS SDK dependencies for the S3 backend (`aws-sdk-go-v2`, `config`, `credentials`, `service/s3`)
+- Bumped `google.golang.org/api` for the GCS backend
+- CI now runs on Go 1.26 only
+- Bumped `codecov/codecov-action` from 5 to 6 and added `codecov.yml`
+
+### Fixed
+
+- Fixed Go version badge link in README
+
 ## [0.1.0] - 2026-03-16
 
 ### Added

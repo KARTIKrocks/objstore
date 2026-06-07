@@ -1,0 +1,148 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit configuration for objstore — a multi-module Go object-storage library.
+# Docs: https://docs.coderabbit.ai/getting-started/configure-coderabbit
+language: en-US
+early_access: false
+tone_instructions: >-
+  Reviewing objstore, a public Go object-storage library (the Bucket interface,
+  with local/memory/S3/GCS/Azure backends). Treat it as stable public API:
+  prioritize correctness, backward compatibility, and idiomatic Go. Be precise,
+  direct, and concise.
+
+reviews:
+  profile: assertive
+  # Don't gate merges behind CodeRabbit; let CI (tests/lint/CodeQL) be the hard gate.
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  auto_title_placeholder: "@coderabbitai"
+  review_status: true
+  poem: true
+  collapse_walkthrough: false
+  changed_files_summary: true
+  sequence_diagrams: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: true
+  suggested_reviewers: true
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    base_branches:
+      - main
+
+  # Skip generated, vendored, build, and dependency artifacts so reviews stay signal-rich.
+  path_filters:
+    - "!**/node_modules/**"
+    - "!objstore-website/dist/**"
+    - "!**/*.min.js"
+    - "!**/*.min.css"
+    - "!**/go.sum"
+    - "!**/vendor/**"
+    - "!**/*.pb.go"
+    - "!**/*_generated.go"
+    - "!**/mock_*.go"
+    - "!**/*.svg"
+
+  path_instructions:
+    - path: "**/*.go"
+      instructions: >-
+        Review as idiomatic, production Go for a public library.
+        - Errors: wrap with %w to preserve chains; use errors.Is/As at call sites;
+          never discard errors silently (golangci errcheck is enforced).
+        - Sentinel errors (e.g. ErrNotExist) must stay comparable and behave
+          consistently across every backend implementation.
+        - Context: every I/O-bound method must accept and honor context.Context
+          for cancellation; never store a Context in a struct.
+        - Resources: io.ReadCloser bodies and streams must be closed; flag missing
+          Close() and recommend defer or closing on every return path.
+        - Concurrency: in-memory/local backends must be goroutine-safe; check for
+          data races on shared maps and slices (CI runs `go test -race`).
+        - API stability: exported identifiers, signatures, and the Bucket interface
+          are public surface — flag breaking changes and require they be called out.
+        - Implementations of the Bucket interface must satisfy the same documented
+          semantics (e.g. Get on a missing key returns the sentinel not-found error).
+        - Prefer streaming over buffering whole objects in memory; flag unbounded
+          io.ReadAll on user-supplied object bodies.
+    - path: "**/*_test.go"
+      instructions: >-
+        Verify tests cover error paths and the not-found/sentinel cases, not just the
+        happy path. Table-driven tests should run subtests via t.Run. Flag tests that
+        leak goroutines, files, or temp dirs (use t.TempDir / t.Cleanup). New behavior
+        in any backend should be exercised against the shared interface contract.
+    - path: "s3/**/*.go"
+      instructions: >-
+        S3 backend. Check correct mapping of AWS SDK v2 errors to the library's
+        sentinel errors (e.g. NoSuchKey -> not-found). Ensure pagination is fully
+        drained and request contexts are propagated to every SDK call.
+    - path: "gcs/**/*.go"
+      instructions: >-
+        GCS backend. Ensure storage.ErrObjectNotExist is mapped to the library's
+        not-found sentinel, iterators are drained to iterator.Done, and clients/
+        readers/writers are closed.
+    - path: "azure/**/*.go"
+      instructions: >-
+        Azure Blob backend. Map Azure "blob not found" responses to the library's
+        not-found sentinel, propagate context, and close response bodies.
+    - path: "examples/**/*.go"
+      instructions: >-
+        Example code is documentation. Optimize for clarity and correctness over
+        cleverness; errors may be handled simply but must not be ignored in a way
+        that misleads readers. It is acceptable for examples to be less defensive
+        than library code.
+    - path: "**/*.md"
+      instructions: >-
+        Documentation. Check that code samples compile conceptually, exported API
+        names match the source, and links are valid. Flag stale references when the
+        public API changes.
+    - path: ".github/workflows/**"
+      instructions: >-
+        CI workflows. Pin action versions, keep GITHUB_TOKEN permissions least-
+        privilege, and ensure the module matrix (".", "./s3", "./gcs", "./azure")
+        stays in sync with the repository's actual Go modules.
+
+  # Built-in static-analysis tools CodeRabbit runs and folds into the review.
+  tools:
+    golangci-lint:
+      enabled: true
+      # Reuse the repo's own config so review matches CI exactly.
+      config_file: .golangci.yml
+    gitleaks:
+      enabled: true
+    github-checks:
+      enabled: true
+      timeout_ms: 120000
+    markdownlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    actionlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    # Docs website tooling (objstore-website is a Node project).
+    biome:
+      enabled: true
+    eslint:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  learnings:
+    scope: auto
+  issues:
+    scope: auto
+  pull_requests:
+    scope: auto
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/CONTRIBUTING.md"
+      - "**/CLAUDE.md"
