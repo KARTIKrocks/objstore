@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -112,7 +113,7 @@ func TestMemoryStorage_PutOverwrite(t *testing.T) {
 	store := newTestMemoryStorage()
 
 	store.Put(ctx, "file.txt", strings.NewReader("first"))
-	store.Put(ctx, "file.txt", strings.NewReader("second"))
+	store.Put(ctx, "file.txt", strings.NewReader("second"), WithOverwrite(true))
 
 	data, _ := GetBytes(ctx, store, "file.txt")
 	if string(data) != "second" {
@@ -246,7 +247,7 @@ func TestMemoryStorage_CopyDeepCopy(t *testing.T) {
 	store.Copy(ctx, "src.txt", "dst.txt")
 
 	// Modify source - dst should not change
-	store.Put(ctx, "src.txt", strings.NewReader("modified"))
+	store.Put(ctx, "src.txt", strings.NewReader("modified"), WithOverwrite(true))
 
 	dstData, _ := GetBytes(ctx, store, "dst.txt")
 	if string(dstData) != "hello" {
@@ -501,7 +502,7 @@ func TestMemoryStorage_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			key := "file" + string(rune('A'+i%26)) + ".txt"
+			key := fmt.Sprintf("key-%d.txt", i)
 			_, err := store.Put(ctx, key, strings.NewReader("data"))
 			if err != nil {
 				errs <- err

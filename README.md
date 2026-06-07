@@ -277,11 +277,15 @@ result, err := store.List(ctx, "images/",
 )
 
 // Pagination
+nextToken := ""
 for {
-    result, _ := store.List(ctx, "images/",
+    result, err := store.List(ctx, "images/",
         objstore.WithMaxKeys(100),
         objstore.WithToken(nextToken),
     )
+    if err != nil {
+        log.Fatal(err)
+    }
 
     // Process files...
 

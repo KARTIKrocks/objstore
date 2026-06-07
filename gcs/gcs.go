@@ -3,6 +3,7 @@ package gcs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -121,7 +122,7 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 
 	client, err := storage.NewClient(ctx, clientOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", objstore.ErrInvalidConfig, err)
+		return nil, fmt.Errorf("%w: %w", objstore.ErrInvalidConfig, err)
 	}
 
 	return &Storage{
@@ -183,8 +184,8 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 	// Upload
 	size, err := io.Copy(writer, reader)
 	if err != nil {
-		_ = writer.Close()
-		return nil, err
+		closeErr := writer.Close()
+		return nil, errors.Join(err, closeErr)
 	}
 
 	if err := writer.Close(); err != nil {
@@ -207,7 +208,7 @@ func (st *Storage) Get(ctx context.Context, path string) (io.ReadCloser, error) 
 
 	reader, err := st.bucket.Object(objectName).NewReader(ctx)
 	if err != nil {
-		if err == storage.ErrObjectNotExist {
+		if errors.Is(err, storage.ErrObjectNotExist) {
 			return nil, objstore.ErrNotFound
 		}
 		return nil, err
@@ -221,7 +222,7 @@ func (st *Storage) Delete(ctx context.Context, path string) error {
 	objectName := st.objectName(path)
 
 	if err := st.bucket.Object(objectName).Delete(ctx); err != nil {
-		if err == storage.ErrObjectNotExist {
+		if errors.Is(err, storage.ErrObjectNotExist) {
 			return objstore.ErrNotFound
 		}
 		return err
@@ -236,7 +237,7 @@ func (st *Storage) Exists(ctx context.Context, path string) (bool, error) {
 
 	_, err := st.bucket.Object(objectName).Attrs(ctx)
 	if err != nil {
-		if err == storage.ErrObjectNotExist {
+		if errors.Is(err, storage.ErrObjectNotExist) {
 			return false, nil
 		}
 		return false, err
@@ -251,7 +252,7 @@ func (st *Storage) Stat(ctx context.Context, path string) (*objstore.FileInfo, e
 
 	attrs, err := st.bucket.Object(objectName).Attrs(ctx)
 	if err != nil {
-		if err == storage.ErrObjectNotExist {
+		if errors.Is(err, storage.ErrObjectNotExist) {
 			return nil, objstore.ErrNotFound
 		}
 		return nil, err
@@ -286,6 +287,17 @@ func (st *Storage) List(ctx context.Context, prefix string, opts ...objstore.Lis
 	}
 
 	it := st.bucket.Objects(ctx, query)
+
+	// Set page token for pagination
+	if options.Token != "" {
+		it.PageInfo().Token = options.Token
+	}
+
+	// Set max results per page
+	if options.MaxKeys > 0 {
+		it.PageInfo().MaxSize = options.MaxKeys
+	}
+
 	count := 0
 
 	for {
@@ -323,6 +335,13 @@ func (st *Storage) List(ctx context.Context, prefix string, opts ...objstore.Lis
 		count++
 	}
 
+	// Populate pagination info from iterator
+	pageInfo := it.PageInfo()
+	if pageInfo.Remaining() > 0 {
+		result.IsTruncated = true
+		result.NextToken = pageInfo.Token
+	}
+
 	return result, nil
 }
 
@@ -332,7 +351,7 @@ func (st *Storage) Copy(ctx context.Context, src, dst string) error {
 	dstObj := st.bucket.Object(st.objectName(dst))
 
 	if _, err := dstObj.CopierFrom(srcObj).Run(ctx); err != nil {
-		if err == storage.ErrObjectNotExist {
+		if errors.Is(err, storage.ErrObjectNotExist) {
 			return objstore.ErrNotFound
 		}
 		return err

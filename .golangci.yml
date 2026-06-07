@@ -18,16 +18,15 @@ linters:
     revive:
       rules:
         - name: exported
-  exclusions:
-    paths:
-      - node_modules
-    rules:
-      - linters:
-          - errcheck
-        path: _test\.go
-      - linters:
-          - errcheck
-        path: examples/
+
+issues:
+  exclude-rules:
+    - linters:
+        - errcheck
+      path: _test\.go
+    - linters:
+        - errcheck
+      path: examples/
 
 formatters:
   enable:

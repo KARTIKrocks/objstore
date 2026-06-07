@@ -24,6 +24,9 @@ func main() {
 	fmt.Printf("From data URI: %s (%s, %s)\n", info.Path, info.ContentType, objstore.FormatSize(info.Size))
 
 	text, _ := objstore.GetString(ctx, store, "from-data-uri.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("Content: %s\n\n", text)
 
 	// --- Parse data URIs directly ---
@@ -37,25 +40,40 @@ func main() {
 	src := objstore.NewMemoryStorage()
 	dst := objstore.NewMemoryStorage()
 
-	_, _ = objstore.PutString(ctx, src, "config.json", `{"key": "value"}`,
+	_, err = objstore.PutString(ctx, src, "config.json", `{"key": "value"}`,
 		objstore.WithContentType("application/json"),
 	)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Copy between storages
 	if err := objstore.CopyTo(ctx, src, "config.json", dst, "backup/config.json"); err != nil {
 		log.Fatal(err)
 	}
-	copied, _ := objstore.GetString(ctx, dst, "backup/config.json")
+	copied, err := objstore.GetString(ctx, dst, "backup/config.json")
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("Copied between stores: %s\n", copied)
 
 	// Move between storages
-	_, _ = objstore.PutString(ctx, src, "temp.txt", "temporary data")
+	_, err = objstore.PutString(ctx, src, "temp.txt", "temporary data")
+	if err != nil {
+		log.Fatal(err)
+	}
 	if err := objstore.MoveTo(ctx, src, "temp.txt", dst, "permanent.txt"); err != nil {
 		log.Fatal(err)
 	}
-	exists, _ := src.Exists(ctx, "temp.txt")
+	exists, err := src.Exists(ctx, "temp.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("Source after move exists: %v\n", exists)
-	moved, _ := objstore.GetString(ctx, dst, "permanent.txt")
+	moved, err := objstore.GetString(ctx, dst, "permanent.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("Moved content: %s\n\n", moved)
 
 	// --- File type detection ---
@@ -70,12 +88,18 @@ func main() {
 	}
 
 	for name, content := range files {
-		_, _ = objstore.PutString(ctx, store, name, content)
+		_, err := objstore.PutString(ctx, store, name, content)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	fmt.Println("File type detection:")
 	for name := range files {
-		finfo, _ := store.Stat(ctx, name)
+		finfo, err := store.Stat(ctx, name)
+		if err != nil {
+			log.Fatal(err)
+		}
 		fmt.Printf("  %-15s type=%-30s image=%v video=%v audio=%v doc=%v\n",
 			name, finfo.ContentType,
 			objstore.IsImage(finfo), objstore.IsVideo(finfo),
@@ -102,7 +126,10 @@ func main() {
 	fmt.Printf("  Total bytes: %s\n", objstore.FormatSize(store.TotalBytes()))
 
 	// Direct byte access (useful in tests)
-	raw, _ := store.GetBytes("photo.jpg")
+	raw, err := store.GetBytes("photo.jpg")
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("  Direct bytes for photo.jpg: %q\n", string(raw))
 
 	// Clear all

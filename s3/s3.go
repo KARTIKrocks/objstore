@@ -136,7 +136,7 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	// Load AWS config
 	awsCfg, err := config.LoadDefaultConfig(ctx, awsOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", objstore.ErrInvalidConfig, err)
+		return nil, fmt.Errorf("%w: %w", objstore.ErrInvalidConfig, err)
 	}
 
 	// Build S3 client options
@@ -175,17 +175,6 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 
 	key := st.key(path)
 
-	// Check if file exists
-	if !options.Overwrite {
-		exists, err := st.Exists(ctx, path)
-		if err != nil {
-			return nil, err
-		}
-		if exists {
-			return nil, objstore.ErrAlreadyExists
-		}
-	}
-
 	// Detect content type
 	contentType := options.ContentType
 	if contentType == "" {
@@ -198,6 +187,11 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 		Key:         aws.String(key),
 		Body:        reader,
 		ContentType: aws.String(contentType),
+	}
+
+	// Use atomic conditional put if overwrite is disabled
+	if !options.Overwrite {
+		input.IfNoneMatch = aws.String("*")
 	}
 
 	// Set ACL
@@ -222,6 +216,11 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 	// Upload
 	result, err := st.client.PutObject(ctx, input)
 	if err != nil {
+		// Map precondition failed to ErrAlreadyExists
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "PreconditionFailed" {
+			return nil, objstore.ErrAlreadyExists
+		}
 		return nil, err
 	}
 
@@ -511,12 +510,24 @@ func (st *Storage) DeleteMultiple(ctx context.Context, paths []string) error {
 		objects[i] = types.ObjectIdentifier{Key: aws.String(key)}
 	}
 
-	_, err := st.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+	output, err := st.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 		Bucket: aws.String(st.config.Bucket),
 		Delete: &types.Delete{Objects: objects},
 	})
+	if err != nil {
+		return err
+	}
 
-	return err
+	// Check for per-object errors
+	if len(output.Errors) > 0 {
+		var errMsgs []string
+		for _, e := range output.Errors {
+			errMsgs = append(errMsgs, fmt.Sprintf("%s: %s", aws.ToString(e.Key), aws.ToString(e.Message)))
+		}
+		return fmt.Errorf("failed to delete %d objects: %s", len(output.Errors), strings.Join(errMsgs, "; "))
+	}
+
+	return nil
 }
 
 // key returns the full S3 key with prefix.

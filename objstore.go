@@ -25,6 +25,7 @@ type Storage interface {
 	Put(ctx context.Context, path string, reader io.Reader, opts ...PutOption) (*FileInfo, error)
 
 	// Get retrieves content from the specified path.
+	// The caller is responsible for closing the returned ReadCloser.
 	Get(ctx context.Context, path string) (io.ReadCloser, error)
 
 	// Delete removes the file at the specified path.
@@ -208,7 +209,7 @@ func WithHeaders(headers map[string]string) SignedURLOption {
 // ApplyPutOptions applies PutOption functions to PutOptions.
 func ApplyPutOptions(opts []PutOption) *PutOptions {
 	options := &PutOptions{
-		Overwrite: true, // Default to overwrite
+		Overwrite: false, // Default to no overwrite (safer)
 	}
 	for _, opt := range opts {
 		opt(options)

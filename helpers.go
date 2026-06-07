@@ -60,6 +60,9 @@ func CopyTo(ctx context.Context, src Storage, srcPath string, dst Storage, dstPa
 		opts = append([]PutOption{WithContentType(info.ContentType)}, opts...)
 	}
 
+	// Default to overwrite for copy operations unless explicitly specified
+	opts = append([]PutOption{WithOverwrite(true)}, opts...)
+
 	_, err = dst.Put(ctx, dstPath, reader, opts...)
 	return err
 }
@@ -190,7 +193,7 @@ func SyncDir(ctx context.Context, s Storage, localPath, remotePath string) error
 			return err
 		}
 
-		_, putErr := s.Put(ctx, dstPath, file)
+		_, putErr := s.Put(ctx, dstPath, file, WithOverwrite(true))
 		_ = file.Close()
 		return putErr
 	})

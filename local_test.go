@@ -3,10 +3,12 @@ package objstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -95,7 +97,7 @@ func TestLocalStorage_PutOverwrite(t *testing.T) {
 	store := newTestLocalStorage(t)
 
 	store.Put(ctx, "file.txt", strings.NewReader("first"))
-	store.Put(ctx, "file.txt", strings.NewReader("second"))
+	store.Put(ctx, "file.txt", strings.NewReader("second"), WithOverwrite(true))
 
 	data, _ := GetString(ctx, store, "file.txt")
 	if data != "second" {
@@ -469,6 +471,64 @@ func TestNewLocalStorage_AbsolutePath(t *testing.T) {
 	}
 	if !filepath.IsAbs(store.config.BasePath) {
 		t.Error("BasePath not converted to absolute")
+	}
+}
+
+func TestLocalStorage_ConcurrentAccess(t *testing.T) {
+	ctx := context.Background()
+	store := newTestLocalStorage(t)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 200)
+
+	// Concurrent writes with unique keys
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			key := fmt.Sprintf("key-%d.txt", i)
+			_, err := store.Put(ctx, key, strings.NewReader("data"))
+			if err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+
+	// Concurrent reads
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			key := fmt.Sprintf("key-%d.txt", i%10)
+			_, _ = store.Get(ctx, key)
+		}(i)
+	}
+
+	// Concurrent exists checks
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			key := fmt.Sprintf("key-%d.txt", i%10)
+			_, _ = store.Exists(ctx, key)
+		}(i)
+	}
+
+	// Concurrent deletes
+	for i := 0; i < 25; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			key := fmt.Sprintf("key-%d.txt", i)
+			_ = store.Delete(ctx, key)
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent error: %v", err)
 	}
 }
 
