@@ -1,13 +1,27 @@
-.PHONY: all test test-race coverage lint fmt vet tidy build bench clean ci release-prep release-local
+.PHONY: all setup test test-race coverage lint lint-fix fix fmt fmt-check vet tidy build bench clean ci release-prep release-local
+
+GOLANGCI_LINT_VERSION := v2.12.2
+GOIMPORTS_VERSION := v0.45.0
 
 MODULES = . ./s3 ./gcs ./azure
 SUB_MODULES = ./s3 ./gcs ./azure
 MODULE_PATH = github.com/KARTIKrocks/objstore
 
-all: fmt vet tidy fmt lint test
+all: tidy fmt vet lint build test
+
+## Install development tools (skips if already present)
+setup:
+	@command -v golangci-lint >/dev/null 2>&1 || { \
+		echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."; \
+		go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION); \
+	}
+	@command -v goimports >/dev/null 2>&1 || { \
+		echo "Installing goimports $(GOIMPORTS_VERSION)..."; \
+		go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION); \
+	}
 
 ## Run all checks (CI)
-ci: tidy fmt vet lint test-race
+ci: tidy fmt-check vet lint test-race
 
 ## Build all modules
 build:
@@ -37,16 +51,31 @@ coverage:
 	@echo "Full report: go tool cover -html=coverage.out"
 
 ## Run linter across all modules
-lint:
+lint: setup
 	@for mod in $(MODULES); do \
 		echo "==> lint $$mod"; \
 		(cd $$mod && golangci-lint run --timeout=5m ./...); \
 	done
 
+## Run golangci-lint with auto-fix
+lint-fix: setup
+	@for mod in $(MODULES); do \
+		echo "==> Linting (fix) $$mod"; \
+		(cd $$mod && golangci-lint run --fix ./...) || exit 1; \
+	done
+
+## Fix code formatting and linting issues
+fix: fmt lint-fix
+
 ## Format code
-fmt:
+fmt: setup
 	@gofmt -s -w .
 	@goimports -w .
+
+## Check formatting without modifying files (used in CI)
+fmt-check: setup
+	@test -z "$$(gofmt -s -l . | tee /dev/stderr)" || { echo "Unformatted files found. Run 'make fmt'."; exit 1; }
+	@test -z "$$(goimports -l . | tee /dev/stderr)" || { echo "Unordered imports found. Run 'make fmt'."; exit 1; }
 
 ## Run go vet across all modules
 vet:
