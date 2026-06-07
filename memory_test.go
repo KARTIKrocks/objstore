@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -501,7 +502,7 @@ func TestMemoryStorage_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			key := "file" + string(rune('A'+i%26)) + ".txt"
+			key := fmt.Sprintf("key-%d.txt", i)
 			_, err := store.Put(ctx, key, strings.NewReader("data"))
 			if err != nil {
 				errs <- err

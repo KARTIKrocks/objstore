@@ -10,6 +10,21 @@ import (
 	"time"
 )
 
+// ctxReader wraps an io.Reader and checks context cancellation during Read operations.
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (cr *ctxReader) Read(p []byte) (n int, err error) {
+	select {
+	case <-cr.ctx.Done():
+		return 0, cr.ctx.Err()
+	default:
+		return cr.r.Read(p)
+	}
+}
+
 // LocalConfig holds configuration for local filesystem storage.
 type LocalConfig struct {
 	// BasePath is the root directory for storage.
@@ -123,8 +138,9 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 		return nil, fmt.Errorf("%w: %v", ErrPermission, err)
 	}
 
-	// Copy content
-	size, err := io.Copy(file, reader)
+	// Copy content with context cancellation support
+	ctxR := &ctxReader{ctx: ctx, r: reader}
+	size, err := io.Copy(file, ctxR)
 	if err != nil {
 		_ = file.Close()
 		_ = os.Remove(fullPath)
@@ -154,6 +170,10 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 
 // Get retrieves content from the local filesystem.
 func (s *LocalStorage) Get(ctx context.Context, path string) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	fullPath, err := s.fullPath(path)
 	if err != nil {
 		return nil, err
@@ -172,6 +192,10 @@ func (s *LocalStorage) Get(ctx context.Context, path string) (io.ReadCloser, err
 
 // Delete removes a file from the local filesystem.
 func (s *LocalStorage) Delete(ctx context.Context, path string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	fullPath, err := s.fullPath(path)
 	if err != nil {
 		return err
@@ -189,6 +213,10 @@ func (s *LocalStorage) Delete(ctx context.Context, path string) error {
 
 // Exists checks if a file exists on the local filesystem.
 func (s *LocalStorage) Exists(ctx context.Context, path string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
 	fullPath, err := s.fullPath(path)
 	if err != nil {
 		return false, err
@@ -207,6 +235,10 @@ func (s *LocalStorage) Exists(ctx context.Context, path string) (bool, error) {
 
 // Stat returns file information.
 func (s *LocalStorage) Stat(ctx context.Context, path string) (*FileInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	fullPath, err := s.fullPath(path)
 	if err != nil {
 		return nil, err
@@ -249,6 +281,11 @@ func (s *LocalStorage) List(ctx context.Context, prefix string, opts ...ListOpti
 	prefixMap := make(map[string]bool)
 
 	err = filepath.Walk(searchPath, func(path string, info os.FileInfo, walkErr error) error {
+		// Check for context cancellation
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		if walkErr != nil {
 			return fmt.Errorf("walk error at %s: %w", path, walkErr)
 		}
@@ -353,6 +390,10 @@ func (s *LocalStorage) handleNestedEntry(relPath, prefix string, info os.FileInf
 
 // Copy copies a file.
 func (s *LocalStorage) Copy(ctx context.Context, src, dst string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	srcPath, err := s.fullPath(src)
 	if err != nil {
 		return err
@@ -397,6 +438,10 @@ func (s *LocalStorage) Copy(ctx context.Context, src, dst string) error {
 
 // Move moves a file.
 func (s *LocalStorage) Move(ctx context.Context, src, dst string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	srcPath, err := s.fullPath(src)
 	if err != nil {
 		return err
@@ -460,6 +505,10 @@ func (s *LocalStorage) fullPath(path string) (string, error) {
 
 // DeleteDir removes a directory and all its contents.
 func (s *LocalStorage) DeleteDir(ctx context.Context, path string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	fullPath, err := s.fullPath(path)
 	if err != nil {
 		return err

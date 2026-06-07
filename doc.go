@@ -28,6 +28,9 @@
 //
 //	// Download
 //	reader, err := store.Get(ctx, "images/photo.jpg")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //	defer reader.Close()
 //
 //	// Delete
@@ -38,13 +41,17 @@
 // Use the same interface across environments:
 //
 //	var store objstore.Storage
+//	var err error
 //	switch env {
 //	case "test":
 //	    store = objstore.NewMemoryStorage()
 //	case "local":
-//	    store, _ = objstore.NewLocalStorage(objstore.DefaultLocalConfig())
+//	    store, err = objstore.NewLocalStorage(objstore.DefaultLocalConfig())
 //	case "production":
-//	    store, _ = s3.New(ctx, s3.DefaultConfig().WithBucket("my-bucket"))
+//	    store, err = s3.New(ctx, s3.DefaultConfig().WithBucket("my-bucket"))
+//	}
+//	if err != nil {
+//	    log.Fatal(err)
 //	}
 //
 // # Upload Options

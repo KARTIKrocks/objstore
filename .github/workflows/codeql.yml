@@ -30,8 +30,13 @@ jobs:
         with:
           languages: go
 
-      - name: Build
-        run: go build ./...
+      - name: Build all modules
+        run: |
+          for module in . ./s3 ./gcs ./azure; do
+            echo "::group::build $module"
+            (cd "$module" && go build ./...)
+            echo "::endgroup::"
+          done
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
