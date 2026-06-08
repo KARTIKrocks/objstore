@@ -271,9 +271,15 @@ func (s *MemoryStorage) Move(ctx context.Context, src, dst string) error {
 		return ErrNotFound
 	}
 
-	// Move the file directly — no deep copy needed since we're deleting the source.
-	file.modTime = time.Now()
-	s.files[dst] = file
+	// Store a new value at dst instead of mutating the existing entry in place.
+	// memoryFile entries are treated as immutable once stored, which lets List
+	// snapshot the pointers and read them after releasing the lock without racing.
+	s.files[dst] = &memoryFile{
+		data:        file.data,
+		contentType: file.contentType,
+		metadata:    file.metadata,
+		modTime:     time.Now(),
+	}
 	delete(s.files, src)
 
 	return nil

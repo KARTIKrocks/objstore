@@ -112,6 +112,10 @@ func (s *LocalStorage) Close() error {
 func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, opts ...PutOption) (*FileInfo, error) {
 	options := ApplyPutOptions(opts)
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	fullPath, err := s.fullPath(path)
 	if err != nil {
 		return nil, err
@@ -295,7 +299,7 @@ func (s *LocalStorage) List(ctx context.Context, prefix string, opts ...ListOpti
 			return nil
 		}
 
-		if skip := s.handleNestedEntry(relPath, prefix, info, options, prefixMap, result); skip {
+		if skip := s.handleNestedEntry(relPath, prefix, options, prefixMap, result); skip {
 			if info.IsDir() {
 				return filepath.SkipDir
 			}
@@ -367,7 +371,7 @@ func (s *LocalStorage) listRelPath(path, searchPath, prefix string) (string, boo
 
 // handleNestedEntry checks if an entry is nested beyond the delimiter and adds it as a prefix.
 // Returns true if the entry was handled (should be skipped by the caller).
-func (s *LocalStorage) handleNestedEntry(relPath, prefix string, info os.FileInfo, options *ListOptions, prefixMap map[string]bool, result *ListResult) bool {
+func (s *LocalStorage) handleNestedEntry(relPath, prefix string, options *ListOptions, prefixMap map[string]bool, result *ListResult) bool {
 	if options.Recursive || options.Delimiter == "" {
 		return false
 	}
@@ -427,8 +431,8 @@ func (s *LocalStorage) Copy(ctx context.Context, src, dst string) error {
 		return fmt.Errorf("%w: %v", ErrPermission, err)
 	}
 
-	// Copy
-	if _, err := io.Copy(dstFile, srcFile); err != nil {
+	// Copy with context cancellation support
+	if _, err := io.Copy(dstFile, &ctxReader{ctx: ctx, r: srcFile}); err != nil {
 		_ = dstFile.Close()
 		return err
 	}

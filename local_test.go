@@ -500,7 +500,10 @@ func TestLocalStorage_ConcurrentAccess(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			key := fmt.Sprintf("key-%d.txt", i%10)
-			_, _ = store.Get(ctx, key)
+			r, err := store.Get(ctx, key)
+			if err == nil && r != nil {
+				_ = r.Close()
+			}
 		}(i)
 	}
 
@@ -530,6 +533,61 @@ func TestLocalStorage_ConcurrentAccess(t *testing.T) {
 	for err := range errs {
 		t.Errorf("concurrent error: %v", err)
 	}
+}
+
+func TestLocalStorage_ContextCancellation(t *testing.T) {
+	store := newTestLocalStorage(t)
+
+	// Seed a file so source-dependent operations have something to act on.
+	if _, err := store.Put(context.Background(), "src.txt", strings.NewReader("data")); err != nil {
+		t.Fatalf("seed Put: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately so every call observes a canceled context
+
+	assertCanceled := func(name string, err error) {
+		t.Helper()
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("%s: expected context.Canceled, got %v", name, err)
+		}
+	}
+
+	if _, err := store.Put(ctx, "x.txt", strings.NewReader("data")); err != nil {
+		assertCanceled("Put", err)
+	} else {
+		t.Error("Put: expected error on canceled context")
+	}
+
+	if _, err := store.Get(ctx, "src.txt"); err != nil {
+		assertCanceled("Get", err)
+	} else {
+		t.Error("Get: expected error on canceled context")
+	}
+
+	assertCanceled("Delete", store.Delete(ctx, "src.txt"))
+
+	if _, err := store.Exists(ctx, "src.txt"); err != nil {
+		assertCanceled("Exists", err)
+	} else {
+		t.Error("Exists: expected error on canceled context")
+	}
+
+	if _, err := store.Stat(ctx, "src.txt"); err != nil {
+		assertCanceled("Stat", err)
+	} else {
+		t.Error("Stat: expected error on canceled context")
+	}
+
+	if _, err := store.List(ctx, ""); err != nil {
+		assertCanceled("List", err)
+	} else {
+		t.Error("List: expected error on canceled context")
+	}
+
+	assertCanceled("Copy", store.Copy(ctx, "src.txt", "dst.txt"))
+	assertCanceled("Move", store.Move(ctx, "src.txt", "dst.txt"))
+	assertCanceled("DeleteDir", store.DeleteDir(ctx, "src.txt"))
 }
 
 // Verify LocalStorage implements Storage interface at compile time.

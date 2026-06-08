@@ -337,7 +337,7 @@ func (st *Storage) List(ctx context.Context, prefix string, opts ...objstore.Lis
 
 	// Populate pagination info from iterator
 	pageInfo := it.PageInfo()
-	if pageInfo.Remaining() > 0 {
+	if pageInfo.Token != "" {
 		result.IsTruncated = true
 		result.NextToken = pageInfo.Token
 	}
