@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -34,10 +35,9 @@ func main() {
 
 	// Error handling
 	_, err = store.Get(ctx, "nonexistent.txt")
-	switch err { //nolint:errorlint // example code uses direct comparison for clarity
-	case objstore.ErrNotFound:
+	if errors.Is(err, objstore.ErrNotFound) {
 		fmt.Println("Correctly got ErrNotFound for missing file")
-	default:
+	} else {
 		fmt.Println("Unexpected error:", err)
 	}
 }
@@ -115,7 +115,10 @@ func urlsAndTypes(ctx context.Context, store *objstore.LocalStorage) {
 	fmt.Printf("\nPublic URL: %s\n", url)
 
 	// File type checks
-	svgInfo, _ := store.Stat(ctx, "images/logo.svg")
+	svgInfo, err := store.Stat(ctx, "images/logo.svg")
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("\nlogo.svg is image: %v\n", objstore.IsImage(svgInfo))
 	fmt.Printf("logo.svg is document: %v\n", objstore.IsDocument(svgInfo))
 
@@ -141,7 +144,7 @@ func deleteAndOverwrite(ctx context.Context, store *objstore.LocalStorage) {
 	// Prevent overwrite
 	_, _ = objstore.PutString(ctx, store, "unique.txt", "first")
 	_, err := objstore.PutString(ctx, store, "unique.txt", "second", objstore.WithOverwrite(false))
-	if err == objstore.ErrAlreadyExists {
+	if errors.Is(err, objstore.ErrAlreadyExists) {
 		fmt.Println("Correctly prevented overwrite!")
 	}
 }

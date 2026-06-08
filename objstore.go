@@ -25,6 +25,7 @@ type Storage interface {
 	Put(ctx context.Context, path string, reader io.Reader, opts ...PutOption) (*FileInfo, error)
 
 	// Get retrieves content from the specified path.
+	// The caller is responsible for closing the returned ReadCloser.
 	Get(ctx context.Context, path string) (io.ReadCloser, error)
 
 	// Delete removes the file at the specified path.

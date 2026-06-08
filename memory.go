@@ -49,6 +49,13 @@ func (s *MemoryStorage) Put(ctx context.Context, path string, reader io.Reader, 
 
 	path = NormalizePath(path)
 
+	// Read content before acquiring the lock, using context-aware reader
+	ctxR := &ctxReader{ctx: ctx, r: reader}
+	data, err := io.ReadAll(ctxR)
+	if err != nil {
+		return nil, err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -57,12 +64,6 @@ func (s *MemoryStorage) Put(ctx context.Context, path string, reader io.Reader, 
 		if _, exists := s.files[path]; exists {
 			return nil, ErrAlreadyExists
 		}
-	}
-
-	// Read content
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
 	}
 
 	// Detect content type
@@ -158,8 +159,13 @@ func (s *MemoryStorage) List(ctx context.Context, prefix string, opts ...ListOpt
 
 	prefix = NormalizePath(prefix)
 
+	// Take a snapshot under read lock
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	snapshot := make(map[string]*memoryFile, len(s.files))
+	for k, v := range s.files {
+		snapshot[k] = v
+	}
+	s.mu.RUnlock()
 
 	result := &ListResult{
 		Files:    make([]*FileInfo, 0),
@@ -168,9 +174,9 @@ func (s *MemoryStorage) List(ctx context.Context, prefix string, opts ...ListOpt
 
 	prefixSet := make(map[string]bool)
 
-	// Get sorted keys
-	keys := make([]string, 0, len(s.files))
-	for k := range s.files {
+	// Get sorted keys from snapshot
+	keys := make([]string, 0, len(snapshot))
+	for k := range snapshot {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -202,7 +208,7 @@ func (s *MemoryStorage) List(ctx context.Context, prefix string, opts ...ListOpt
 			break
 		}
 
-		file := s.files[path]
+		file := snapshot[path]
 		result.Files = append(result.Files, &FileInfo{
 			Path:         path,
 			Name:         filepath.Base(path),
@@ -265,9 +271,15 @@ func (s *MemoryStorage) Move(ctx context.Context, src, dst string) error {
 		return ErrNotFound
 	}
 
-	// Move the file directly — no deep copy needed since we're deleting the source.
-	file.modTime = time.Now()
-	s.files[dst] = file
+	// Store a new value at dst instead of mutating the existing entry in place.
+	// memoryFile entries are treated as immutable once stored, which lets List
+	// snapshot the pointers and read them after releasing the lock without racing.
+	s.files[dst] = &memoryFile{
+		data:        file.data,
+		contentType: file.contentType,
+		metadata:    file.metadata,
+		modTime:     time.Now(),
+	}
 	delete(s.files, src)
 
 	return nil

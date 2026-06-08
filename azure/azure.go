@@ -102,21 +102,29 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	case cfg.ConnectionString != "":
 		client, err := azblob.NewClientFromConnectionString(cfg.ConnectionString, nil)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", objstore.ErrInvalidConfig, err)
+			return nil, fmt.Errorf("%w: %w", objstore.ErrInvalidConfig, err)
 		}
 		st.client = client
+
+		// Extract AccountName from connection string
+		for _, part := range strings.Split(cfg.ConnectionString, ";") {
+			if strings.HasPrefix(part, "AccountName=") {
+				st.config.AccountName = strings.TrimPrefix(part, "AccountName=")
+				break
+			}
+		}
 
 	case cfg.AccountName != "" && cfg.AccountKey != "":
 		cred, err := azblob.NewSharedKeyCredential(cfg.AccountName, cfg.AccountKey)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", objstore.ErrInvalidConfig, err)
+			return nil, fmt.Errorf("%w: %w", objstore.ErrInvalidConfig, err)
 		}
 		st.sharedKey = cred
 
 		serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net/", cfg.AccountName)
 		client, err := azblob.NewClientWithSharedKeyCredential(serviceURL, cred, nil)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", objstore.ErrInvalidConfig, err)
+			return nil, fmt.Errorf("%w: %w", objstore.ErrInvalidConfig, err)
 		}
 		st.client = client
 
@@ -124,13 +132,13 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 		// Use DefaultAzureCredential (managed identity, env vars, CLI, etc.)
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", objstore.ErrInvalidConfig, err)
+			return nil, fmt.Errorf("%w: %w", objstore.ErrInvalidConfig, err)
 		}
 
 		serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net/", cfg.AccountName)
 		client, err := azblob.NewClient(serviceURL, cred, nil)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", objstore.ErrInvalidConfig, err)
+			return nil, fmt.Errorf("%w: %w", objstore.ErrInvalidConfig, err)
 		}
 		st.client = client
 
@@ -283,7 +291,7 @@ func (st *Storage) List(ctx context.Context, prefix string, opts ...objstore.Lis
 	listPrefix := st.blobName(prefix)
 	listOpts := &azblob.ListBlobsFlatOptions{
 		Prefix:     &listPrefix,
-		MaxResults: ptrInt32(int32(options.MaxKeys)),
+		MaxResults: maxResultsPtr(options.MaxKeys),
 	}
 
 	if options.Token != "" {
@@ -339,7 +347,7 @@ func (st *Storage) listHierarchy(ctx context.Context, prefix string, options *ob
 	listPrefix := st.blobName(prefix)
 	listOpts := &container.ListBlobsHierarchyOptions{
 		Prefix:     &listPrefix,
-		MaxResults: ptrInt32(int32(options.MaxKeys)),
+		MaxResults: maxResultsPtr(options.MaxKeys),
 	}
 
 	if options.Token != "" {
@@ -398,6 +406,10 @@ func (st *Storage) listHierarchy(ctx context.Context, prefix string, options *ob
 
 // Copy copies a file in Azure Blob Storage.
 func (st *Storage) Copy(ctx context.Context, src, dst string) error {
+	if st.config.AccountName == "" {
+		return fmt.Errorf("%w: account name not available (required for copy operations)", objstore.ErrInvalidConfig)
+	}
+
 	srcBlobName := st.blobName(src)
 	dstBlobName := st.blobName(dst)
 
@@ -430,6 +442,10 @@ func (st *Storage) URL(ctx context.Context, path string) (string, error) {
 		return strings.TrimSuffix(st.config.BaseURL, "/") + "/" + strings.TrimPrefix(path, "/"), nil
 	}
 
+	if st.config.AccountName == "" {
+		return "", fmt.Errorf("%w: account name not available (required for URL generation)", objstore.ErrInvalidConfig)
+	}
+
 	blobName := st.blobName(path)
 	return fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s",
 		st.config.AccountName, st.config.ContainerName, blobName), nil
@@ -441,6 +457,10 @@ func (st *Storage) SignedURL(ctx context.Context, path string, opts ...objstore.
 
 	if st.sharedKey == nil {
 		return "", fmt.Errorf("%w: signed URLs require shared key credentials", objstore.ErrNotImplemented)
+	}
+
+	if st.config.AccountName == "" {
+		return "", fmt.Errorf("%w: account name not available (required for signed URL generation)", objstore.ErrInvalidConfig)
 	}
 
 	blobName := st.blobName(path)
@@ -558,7 +578,8 @@ func toAzureMetadata(m map[string]string) map[string]*string {
 	}
 	result := make(map[string]*string, len(m))
 	for k, v := range m {
-		result[k] = &v
+		val := v
+		result[k] = &val
 	}
 	return result
 }
@@ -577,6 +598,11 @@ func fromAzureMetadata(m map[string]*string) map[string]string {
 	return result
 }
 
-func ptrInt32(v int32) *int32 {
-	return &v
+// maxResultsPtr returns a *int32 for the page size, or nil when no limit is set
+// (0 or negative), so the SDK uses its default instead of requesting zero results.
+func maxResultsPtr(maxKeys int) *int32 {
+	if maxKeys <= 0 {
+		return nil
+	}
+	return new(int32(maxKeys))
 }

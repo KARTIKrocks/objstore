@@ -46,9 +46,12 @@ test-race:
 
 ## Run tests with coverage and generate report
 coverage:
-	@go test -race -coverprofile=coverage.out -covermode=atomic ./...
-	@go tool cover -func=coverage.out | tail -1
-	@echo "Full report: go tool cover -html=coverage.out"
+	@for mod in $(MODULES); do \
+		echo "==> coverage $$mod"; \
+		(cd $$mod && go test -race -coverprofile=coverage.out -covermode=atomic ./... && \
+		go tool cover -func=coverage.out | tail -1); \
+	done
+	@echo "Per-module reports: go tool cover -html=<module>/coverage.out"
 
 ## Run linter across all modules
 lint: setup

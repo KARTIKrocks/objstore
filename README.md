@@ -196,7 +196,7 @@ info, err := store.Put(ctx, "images/photo.jpg", file,
 info, err := store.Put(ctx, "images/photo.jpg", file,
     objstore.WithOverwrite(false),
 )
-if err == objstore.ErrAlreadyExists {
+if errors.Is(err, objstore.ErrAlreadyExists) {
     // File already exists
 }
 
@@ -211,7 +211,7 @@ objstore.PutDataURI(ctx, store, "image.png", "data:image/png;base64,...")
 ```go
 // As io.ReadCloser
 reader, err := store.Get(ctx, "docs/file.pdf")
-if err == objstore.ErrNotFound {
+if errors.Is(err, objstore.ErrNotFound) {
     // File doesn't exist
 }
 defer reader.Close()
@@ -277,11 +277,15 @@ result, err := store.List(ctx, "images/",
 )
 
 // Pagination
+nextToken := ""
 for {
-    result, _ := store.List(ctx, "images/",
+    result, err := store.List(ctx, "images/",
         objstore.WithMaxKeys(100),
         objstore.WithToken(nextToken),
     )
+    if err != nil {
+        log.Fatal(err)
+    }
 
     // Process files...
 

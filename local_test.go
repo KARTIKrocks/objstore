@@ -3,10 +3,12 @@ package objstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -470,6 +472,122 @@ func TestNewLocalStorage_AbsolutePath(t *testing.T) {
 	if !filepath.IsAbs(store.config.BasePath) {
 		t.Error("BasePath not converted to absolute")
 	}
+}
+
+func TestLocalStorage_ConcurrentAccess(t *testing.T) {
+	ctx := context.Background()
+	store := newTestLocalStorage(t)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 200)
+
+	// Concurrent writes with unique keys
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			key := fmt.Sprintf("key-%d.txt", i)
+			_, err := store.Put(ctx, key, strings.NewReader("data"))
+			if err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+
+	// Concurrent reads
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			key := fmt.Sprintf("key-%d.txt", i%10)
+			r, err := store.Get(ctx, key)
+			if err == nil && r != nil {
+				_ = r.Close()
+			}
+		}(i)
+	}
+
+	// Concurrent exists checks
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			key := fmt.Sprintf("key-%d.txt", i%10)
+			_, _ = store.Exists(ctx, key)
+		}(i)
+	}
+
+	// Concurrent deletes
+	for i := 0; i < 25; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			key := fmt.Sprintf("key-%d.txt", i)
+			_ = store.Delete(ctx, key)
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent error: %v", err)
+	}
+}
+
+func TestLocalStorage_ContextCancellation(t *testing.T) {
+	store := newTestLocalStorage(t)
+
+	// Seed a file so source-dependent operations have something to act on.
+	if _, err := store.Put(context.Background(), "src.txt", strings.NewReader("data")); err != nil {
+		t.Fatalf("seed Put: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately so every call observes a canceled context
+
+	assertCanceled := func(name string, err error) {
+		t.Helper()
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("%s: expected context.Canceled, got %v", name, err)
+		}
+	}
+
+	if _, err := store.Put(ctx, "x.txt", strings.NewReader("data")); err != nil {
+		assertCanceled("Put", err)
+	} else {
+		t.Error("Put: expected error on canceled context")
+	}
+
+	if _, err := store.Get(ctx, "src.txt"); err != nil {
+		assertCanceled("Get", err)
+	} else {
+		t.Error("Get: expected error on canceled context")
+	}
+
+	assertCanceled("Delete", store.Delete(ctx, "src.txt"))
+
+	if _, err := store.Exists(ctx, "src.txt"); err != nil {
+		assertCanceled("Exists", err)
+	} else {
+		t.Error("Exists: expected error on canceled context")
+	}
+
+	if _, err := store.Stat(ctx, "src.txt"); err != nil {
+		assertCanceled("Stat", err)
+	} else {
+		t.Error("Stat: expected error on canceled context")
+	}
+
+	if _, err := store.List(ctx, ""); err != nil {
+		assertCanceled("List", err)
+	} else {
+		t.Error("List: expected error on canceled context")
+	}
+
+	assertCanceled("Copy", store.Copy(ctx, "src.txt", "dst.txt"))
+	assertCanceled("Move", store.Move(ctx, "src.txt", "dst.txt"))
+	assertCanceled("DeleteDir", store.DeleteDir(ctx, "src.txt"))
 }
 
 // Verify LocalStorage implements Storage interface at compile time.
