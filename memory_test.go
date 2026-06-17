@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func newTestMemoryStorage() *MemoryStorage {
@@ -409,9 +410,35 @@ func TestMemoryStorage_SignedURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignedURL: %v", err)
 	}
-	// Memory storage delegates to URL
+	// Without a signing secret, GET delegates to the unsigned public URL.
 	if url != "https://cdn.example.com/file.txt" {
 		t.Errorf("SignedURL = %q", url)
+	}
+}
+
+func TestMemoryStorage_SignedURL_Signed(t *testing.T) {
+	store := NewMemoryStorage().
+		WithBaseURL("https://cdn.example.com").
+		WithSigningSecret(testSecret)
+
+	raw, err := store.SignedURL(context.Background(), "uploads/f.png",
+		WithMethod("PUT"), WithSignedContentType("image/png"), WithExpires(time.Minute))
+	if err != nil {
+		t.Fatalf("SignedURL: %v", err)
+	}
+	got, err := VerifySignedURL(raw, testSecret)
+	if err != nil {
+		t.Fatalf("VerifySignedURL: %v", err)
+	}
+	if got.Method != "PUT" || got.ContentType != "image/png" || got.Path != "/uploads/f.png" {
+		t.Fatalf("verified = %+v", got)
+	}
+}
+
+func TestMemoryStorage_SignedURL_PutNeedsSecret(t *testing.T) {
+	store := NewMemoryStorage().WithBaseURL("https://cdn.example.com")
+	if _, err := store.SignedURL(context.Background(), "f.txt", WithMethod("PUT")); !errors.Is(err, ErrNotImplemented) {
+		t.Fatalf("err = %v, want ErrNotImplemented", err)
 	}
 }
 

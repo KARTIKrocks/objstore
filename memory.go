@@ -3,6 +3,7 @@ package objstore
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"path/filepath"
 	"sort"
@@ -13,9 +14,10 @@ import (
 
 // MemoryStorage implements Storage with in-memory storage for testing.
 type MemoryStorage struct {
-	mu      sync.RWMutex
-	files   map[string]*memoryFile
-	baseURL string
+	mu            sync.RWMutex
+	files         map[string]*memoryFile
+	baseURL       string
+	signingSecret string
 }
 
 type memoryFile struct {
@@ -35,6 +37,13 @@ func NewMemoryStorage() *MemoryStorage {
 // WithBaseURL sets the base URL for the memory storage.
 func (s *MemoryStorage) WithBaseURL(url string) *MemoryStorage {
 	s.baseURL = url
+	return s
+}
+
+// WithSigningSecret sets the HMAC signing secret used by SignedURL (and
+// VerifySignedURL).
+func (s *MemoryStorage) WithSigningSecret(secret string) *MemoryStorage {
+	s.signingSecret = secret
 	return s
 }
 
@@ -293,9 +302,23 @@ func (s *MemoryStorage) URL(ctx context.Context, path string) (string, error) {
 	return strings.TrimSuffix(s.baseURL, "/") + "/" + strings.TrimPrefix(path, "/"), nil
 }
 
-// SignedURL returns a signed URL (not supported for memory storage).
+// SignedURL returns an HMAC-signed URL authorizing temporary access to path.
+// With a signing secret configured (WithSigningSecret) it honors the Method,
+// Expires, and ContentType options and embeds a signature that VerifySignedURL
+// checks. Without a secret it falls back to the unsigned public URL for GET and
+// returns ErrNotImplemented for any other method. Requires a base URL.
 func (s *MemoryStorage) SignedURL(ctx context.Context, path string, opts ...SignedURLOption) (string, error) {
-	return s.URL(ctx, path)
+	if s.baseURL == "" {
+		return "", ErrNotImplemented
+	}
+	o := ApplySignedURLOptions(opts)
+	if s.signingSecret == "" {
+		if o.Method != "" && o.Method != "GET" {
+			return "", fmt.Errorf("%w: signing secret required for %s signed URLs", ErrNotImplemented, o.Method)
+		}
+		return s.URL(ctx, path)
+	}
+	return buildSignedURL(s.baseURL, path, s.signingSecret, o.Method, o.ContentType, time.Now().Add(o.Expires))
 }
 
 // Clear removes all files from memory.
