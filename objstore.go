@@ -11,12 +11,14 @@ import (
 
 // Sentinel errors for storage operations.
 var (
-	ErrNotFound       = errors.New("objstore: file not found")
-	ErrAlreadyExists  = errors.New("objstore: file already exists")
-	ErrInvalidPath    = errors.New("objstore: invalid path")
-	ErrPermission     = errors.New("objstore: permission denied")
-	ErrNotImplemented = errors.New("objstore: operation not implemented")
-	ErrInvalidConfig  = errors.New("objstore: invalid configuration")
+	ErrNotFound         = errors.New("objstore: file not found")
+	ErrAlreadyExists    = errors.New("objstore: file already exists")
+	ErrInvalidPath      = errors.New("objstore: invalid path")
+	ErrPermission       = errors.New("objstore: permission denied")
+	ErrNotImplemented   = errors.New("objstore: operation not implemented")
+	ErrInvalidConfig    = errors.New("objstore: invalid configuration")
+	ErrSignatureInvalid = errors.New("objstore: signed URL signature invalid")
+	ErrSignatureExpired = errors.New("objstore: signed URL expired")
 )
 
 // Storage defines the interface for storage backends.

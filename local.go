@@ -33,6 +33,12 @@ type LocalConfig struct {
 	// BaseURL is the public URL prefix for serving files.
 	BaseURL string
 
+	// SigningSecret enables HMAC-signed URLs (SignedURL). When empty, SignedURL
+	// falls back to the unsigned public URL for GET and is unsupported for other
+	// methods. The same secret must be given to VerifySignedURL by the handler
+	// that serves the URLs.
+	SigningSecret string
+
 	// CreateDirs automatically creates directories when uploading.
 	CreateDirs bool
 
@@ -63,6 +69,13 @@ func (c LocalConfig) WithBasePath(path string) LocalConfig {
 // WithBaseURL returns a new config with the specified base URL.
 func (c LocalConfig) WithBaseURL(url string) LocalConfig {
 	c.BaseURL = url
+	return c
+}
+
+// WithSigningSecret returns a new config with the HMAC signing secret used by
+// SignedURL (and VerifySignedURL).
+func (c LocalConfig) WithSigningSecret(secret string) LocalConfig {
+	c.SigningSecret = secret
 	return c
 }
 
@@ -484,9 +497,24 @@ func (s *LocalStorage) URL(ctx context.Context, path string) (string, error) {
 	return strings.TrimSuffix(s.config.BaseURL, "/") + "/" + strings.TrimPrefix(path, "/"), nil
 }
 
-// SignedURL returns a signed URL (not supported for local storage).
+// SignedURL returns an HMAC-signed URL authorizing temporary access to path.
+// With a SigningSecret configured it honors the Method (GET/PUT/…), Expires, and
+// ContentType options and embeds a signature that VerifySignedURL checks. Without
+// a secret it falls back to the unsigned public URL for GET and returns
+// ErrNotImplemented for any other method (a local backend cannot authorize a
+// write without a secret). Requires BaseURL to be set.
 func (s *LocalStorage) SignedURL(ctx context.Context, path string, opts ...SignedURLOption) (string, error) {
-	return s.URL(ctx, path)
+	if s.config.BaseURL == "" {
+		return "", ErrNotImplemented
+	}
+	o := ApplySignedURLOptions(opts)
+	if s.config.SigningSecret == "" {
+		if o.Method != "" && o.Method != "GET" {
+			return "", fmt.Errorf("%w: signing secret required for %s signed URLs", ErrNotImplemented, o.Method)
+		}
+		return s.URL(ctx, path)
+	}
+	return buildSignedURL(s.config.BaseURL, path, s.config.SigningSecret, o.Method, o.ContentType, time.Now().Add(o.Expires))
 }
 
 // fullPath returns the full filesystem path, validating against path traversal.

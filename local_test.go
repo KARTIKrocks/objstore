@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func newTestLocalStorage(t *testing.T) *LocalStorage {
@@ -379,9 +380,44 @@ func TestLocalStorage_SignedURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignedURL: %v", err)
 	}
-	// Local storage delegates to URL
+	// Without a signing secret, GET delegates to the unsigned public URL.
 	if url != "https://cdn.example.com/file.txt" {
 		t.Errorf("SignedURL = %q", url)
+	}
+}
+
+func TestLocalStorage_SignedURL_NoBaseURL(t *testing.T) {
+	store, _ := NewLocalStorage(LocalConfig{BasePath: t.TempDir()})
+	if _, err := store.SignedURL(context.Background(), "file.txt"); !errors.Is(err, ErrNotImplemented) {
+		t.Fatalf("err = %v, want ErrNotImplemented", err)
+	}
+}
+
+func TestLocalStorage_SignedURL_PutNeedsSecret(t *testing.T) {
+	store, _ := NewLocalStorage(LocalConfig{BasePath: t.TempDir(), BaseURL: "https://cdn.example.com"})
+	_, err := store.SignedURL(context.Background(), "f.txt", WithMethod("PUT"))
+	if !errors.Is(err, ErrNotImplemented) {
+		t.Fatalf("err = %v, want ErrNotImplemented (PUT without secret)", err)
+	}
+}
+
+func TestLocalStorage_SignedURL_Signed(t *testing.T) {
+	store, _ := NewLocalStorage(LocalConfig{
+		BasePath:      t.TempDir(),
+		BaseURL:       "https://cdn.example.com",
+		SigningSecret: testSecret,
+	})
+	raw, err := store.SignedURL(context.Background(), "uploads/f.jpg",
+		WithMethod("PUT"), WithSignedContentType("image/jpeg"), WithExpires(time.Minute))
+	if err != nil {
+		t.Fatalf("SignedURL: %v", err)
+	}
+	got, err := VerifySignedURL(raw, testSecret)
+	if err != nil {
+		t.Fatalf("VerifySignedURL: %v", err)
+	}
+	if got.Method != "PUT" || got.ContentType != "image/jpeg" || got.Path != "/uploads/f.jpg" {
+		t.Fatalf("verified = %+v", got)
 	}
 }
 

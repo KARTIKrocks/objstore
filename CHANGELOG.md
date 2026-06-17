@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-06-17
+
+### Added
+
+- **Local & Memory**: `SignedURL` now produces real HMAC-signed URLs when a signing secret is configured (`LocalConfig.WithSigningSecret` / `MemoryStorage.WithSigningSecret`), honoring the `WithMethod`, `WithExpires`, and `WithSignedContentType` options — including `PUT` for uploads — so these backends match the `SignedURL` upload contract the cloud backends already implement
+- `VerifySignedURL(rawURL, secret)` validates a local/memory signed URL and returns the authorized method, path, content type, and expiry for an application's own serving/upload handler to enforce
+- New sentinel errors `ErrSignatureInvalid` and `ErrSignatureExpired`
+
+### Changed
+
+- **Local & Memory**: `SignedURL` previously returned the unsigned public URL regardless of method (ignoring `WithMethod`/`WithExpires`/`WithSignedContentType`). With no signing secret it still returns the unsigned public URL for `GET` (unchanged), but now returns `ErrNotImplemented` for non-GET methods rather than a misleading unsigned URL
+
 ## [0.1.2] - 2026-06-07
 
 ### Fixed
