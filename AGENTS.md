@@ -24,12 +24,15 @@ use:
 - **`azure/`** `…/objstore/azure` — Azure Blob Storage backend.
 
 Each sub-module's `go.mod` **requires a published version** of the root module
-(e.g. `github.com/KARTIKrocks/objstore v0.1.3`), not a `replace` directive.
-This means: when you change root code that a sub-module depends on, the
-sub-module will **not** see your local changes until you wire up replace
-directives. Run `make release-local` to add `replace …/objstore => ../` to every
-sub-module for local development. Run `make release-prep VERSION=vX.Y.Z` to strip
-those replace directives and pin a real version before tagging a release.
+(e.g. `github.com/KARTIKrocks/objstore v0.1.3`), and the committed `go.work`
+overrides that with the working tree. So a change to root code that a sub-module
+depends on *is* seen by that sub-module, and a breaking change fails its tests
+instead of passing CI against the last published root. No `go.mod` here carries
+a `replace` directive — `go.work` is the only place local resolution lives.
+
+Use `GOWORK=off` to reproduce a consumer's build. Releasing is manual: tag the
+root first, bump each sub-module's `require` to that tag, then tag the
+sub-modules (see CONTRIBUTING.md).
 
 ## Common commands
 

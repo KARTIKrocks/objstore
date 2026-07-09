@@ -50,6 +50,46 @@ make ci          # run all checks (tidy, fmt, lint, test across all modules)
 - Update documentation if the public API changes
 - Ensure `make all` passes before requesting review
 
+## Module layout and `go.work`
+
+Each backend (`s3/`, `gcs/`, `azure/`) is its own Go module, so importing
+`objstore` never drags in the AWS, Google Cloud, or Azure SDKs. Each one
+`require`s a published version of the root module.
+
+The committed `go.work` at the repo root overrides that requirement with the
+working tree. Without it the backends would compile against the *published*
+root even here, and a breaking change to the core would pass CI while silently
+breaking every backend. No `go.mod` in this repo carries a `replace`
+directive — `go.work` is the only place local resolution is configured, and it
+is ignored entirely when someone depends on these modules.
+
+To reproduce a consumer's build, set `GOWORK=off`.
+
+## Releasing
+
+Tag the root module first, then point each backend at that tag. Everything here
+is safe to commit to `main` — `go.work` keeps local builds on the working tree
+no matter which root version the backends require.
+
+```bash
+git tag vX.Y.Z && git push origin vX.Y.Z    # root module first
+
+for mod in s3 gcs azure; do
+  (cd "$mod" && go mod edit -require github.com/KARTIKrocks/objstore@vX.Y.Z)
+done
+make tidy && make test
+
+GOWORK=off make test    # what a consumer actually compiles
+
+git commit -am 'Pin sub-modules to vX.Y.Z'
+for mod in s3 gcs azure; do git tag "$mod/vX.Y.Z"; done
+git push origin main --tags
+```
+
+The sub-module bump has to be its own commit: a module tag resolves to a commit,
+and the proxy reads *that commit's* `go.mod`. Tagging before the bump would
+publish a backend still requiring the old root.
+
 ## Reporting Issues
 
 - Use GitHub Issues
