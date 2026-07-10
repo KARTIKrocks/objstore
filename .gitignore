@@ -13,8 +13,14 @@ coverage.out
 coverage*.out
 coverage.html
 
-# Go workspace
-go.work
+# go.work is deliberately committed: every module in this repo lives here, and
+# the workspace is what makes the backends compile against this tree instead of
+# the published root module. Consumers never see it.
+#
+# go.work.sum is not. Go writes it only for sums the per-module go.sum files
+# cannot supply, which happens when workspace-wide MVS lifts a dependency above
+# what some module requires on its own. Committing it papers over that skew;
+# leaving it out means the build says so.
 go.work.sum
 
 # IDE
