@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-07-12
+
+### Fixed
+
+- **Local**: a `LocalConfig` built as a struct literal leaves `FilePermissions`/`DirPermissions` at the zero `os.FileMode`, which the filesystem takes literally as mode `0000`. `NewLocalStorage` now substitutes the defaults (`0644`/`0755`) for unset permissions, so `Put` no longer creates directories and files that nothing — not even the writing process — can open. Configs from `DefaultLocalConfig` were never affected
+- **S3**: `Put` with a streaming (unseekable) body now works against a plain-HTTP endpoint such as a local MinIO. The SDK computed a trailing checksum it refuses to send without TLS, and SigV4 over plain HTTP needs a rewindable body to hash; uploads failed with `unseekable stream is not supported without TLS and trailing checksum` or `failed to seek body to start`. Such a body is now spooled to a temp file and checksums are computed only where the operation requires them. Both behaviors apply to `http://` endpoints only — TLS endpoints (AWS, DigitalOcean Spaces) keep streaming uploads and strict checksums unchanged
+
 ## [0.1.3] - 2026-06-17
 
 ### Added

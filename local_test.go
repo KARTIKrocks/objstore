@@ -1,6 +1,7 @@
 package objstore
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -628,3 +629,58 @@ func TestLocalStorage_ContextCancellation(t *testing.T) {
 
 // Verify LocalStorage implements Storage interface at compile time.
 var _ Storage = (*LocalStorage)(nil)
+
+// TestLocalStorage_StructLiteralConfigPermissions guards a regression: a
+// LocalConfig built as a struct literal (rather than from DefaultLocalConfig)
+// leaves FilePermissions/DirPermissions at the zero FileMode. Taken literally
+// that is mode 0000, so Put created directories and files that nothing — not
+// even the writing process — could open, and every upload failed with
+// ErrPermission on the first nested key.
+func TestLocalStorage_StructLiteralConfigPermissions(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+
+	store, err := NewLocalStorage(LocalConfig{
+		BasePath:   base,
+		CreateDirs: true,
+	})
+	if err != nil {
+		t.Fatalf("NewLocalStorage: %v", err)
+	}
+
+	// A nested key forces Put to MkdirAll an intermediate directory.
+	const key = "salon-id/photo.png"
+	want := []byte("not-really-a-png")
+	if _, err := store.Put(ctx, key, bytes.NewReader(want)); err != nil {
+		t.Fatalf("Put with struct-literal config: %v", err)
+	}
+
+	rc, err := store.Get(ctx, key)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	defer func() { _ = rc.Close() }()
+	got, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("round-trip mismatch: got %q, want %q", got, want)
+	}
+
+	// The created directory and file must be usable, not 0000.
+	di, err := os.Stat(filepath.Join(base, "salon-id"))
+	if err != nil {
+		t.Fatalf("stat dir: %v", err)
+	}
+	if di.Mode().Perm() != defaultDirPermissions.Perm() {
+		t.Errorf("dir mode = %#o, want %#o", di.Mode().Perm(), defaultDirPermissions.Perm())
+	}
+	fi, err := os.Stat(filepath.Join(base, "salon-id", "photo.png"))
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+	if fi.Mode().Perm() != defaultFilePermissions.Perm() {
+		t.Errorf("file mode = %#o, want %#o", fi.Mode().Perm(), defaultFilePermissions.Perm())
+	}
+}

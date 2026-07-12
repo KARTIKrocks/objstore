@@ -49,14 +49,21 @@ type LocalConfig struct {
 	DirPermissions os.FileMode
 }
 
+// Permissions applied when LocalConfig leaves them unset. NewLocalStorage
+// substitutes these, so a zero value is never used as a literal mode.
+const (
+	defaultFilePermissions os.FileMode = 0644
+	defaultDirPermissions  os.FileMode = 0755
+)
+
 // DefaultLocalConfig returns a default local storage configuration.
 func DefaultLocalConfig() LocalConfig {
 	return LocalConfig{
 		BasePath:        "./storage",
 		BaseURL:         "",
 		CreateDirs:      true,
-		FilePermissions: 0644,
-		DirPermissions:  0755,
+		FilePermissions: defaultFilePermissions,
+		DirPermissions:  defaultDirPermissions,
 	}
 }
 
@@ -99,6 +106,17 @@ type LocalStorage struct {
 
 // NewLocalStorage creates a new local filesystem storage.
 func NewLocalStorage(config LocalConfig) (*LocalStorage, error) {
+	// A zero FileMode means "unset", not "deny everyone". Callers that build a
+	// LocalConfig as a struct literal rather than from DefaultLocalConfig would
+	// otherwise get 0000 directories and files — created successfully, then
+	// unreadable even by the process that wrote them.
+	if config.FilePermissions == 0 {
+		config.FilePermissions = defaultFilePermissions
+	}
+	if config.DirPermissions == 0 {
+		config.DirPermissions = defaultDirPermissions
+	}
+
 	// Ensure base path is absolute
 	absPath, err := filepath.Abs(config.BasePath)
 	if err != nil {
