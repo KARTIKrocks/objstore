@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -115,6 +116,39 @@ type Storage struct {
 	config        Config
 }
 
+// isPlaintextEndpoint reports whether a custom endpoint is served over plain
+// HTTP. An empty endpoint means AWS itself, which is always TLS.
+func isPlaintextEndpoint(endpoint string) bool {
+	return strings.HasPrefix(strings.ToLower(endpoint), "http://")
+}
+
+// spoolIfUnseekable returns r unchanged when it can already be rewound;
+// otherwise it copies r to a temp file and returns that. The returned cleanup
+// is always safe to call and removes any temp file.
+func spoolIfUnseekable(r io.Reader) (io.Reader, func(), error) {
+	if _, ok := r.(io.ReadSeeker); ok {
+		return r, func() {}, nil
+	}
+
+	f, err := os.CreateTemp("", "objstore-put-*")
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("spool upload: %w", err)
+	}
+	cleanup := func() {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}
+	if _, err := io.Copy(f, r); err != nil {
+		cleanup()
+		return nil, func() {}, fmt.Errorf("spool upload: %w", err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		cleanup()
+		return nil, func() {}, fmt.Errorf("spool upload: %w", err)
+	}
+	return f, cleanup, nil
+}
+
 // New creates a new S3 storage.
 func New(ctx context.Context, cfg Config) (*Storage, error) {
 	if cfg.Bucket == "" {
@@ -130,6 +164,19 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	if cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
 		awsOpts = append(awsOpts, config.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		))
+	}
+
+	// For a streaming (unseekable) body the SDK computes a *trailing* checksum,
+	// which it refuses to send without TLS — so against a plain-HTTP endpoint
+	// every streaming Put fails with "unseekable stream is not supported without
+	// TLS and trailing checksum". That is the local MinIO setup. Compute
+	// checksums only where the operation requires them, which restores streaming
+	// uploads; TLS endpoints (AWS, DigitalOcean Spaces) keep the stricter
+	// default, so integrity checking is unchanged in production.
+	if isPlaintextEndpoint(cfg.Endpoint) {
+		awsOpts = append(awsOpts, config.WithRequestChecksumCalculation(
+			aws.RequestChecksumCalculationWhenRequired,
 		))
 	}
 
@@ -179,6 +226,21 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 	contentType := options.ContentType
 	if contentType == "" {
 		contentType = objstore.DetectContentType(path)
+	}
+
+	// SigV4 hashes the payload before sending, which means rewinding the body.
+	// Over TLS the SDK can avoid that by streaming with a trailing checksum, but
+	// against a plain-HTTP endpoint (local MinIO) it cannot, and an unseekable
+	// body fails with "failed to seek body to start". Spool such a body to a
+	// temp file so the SDK gets something rewindable, without holding the whole
+	// object in memory. TLS endpoints keep streaming untouched.
+	if isPlaintextEndpoint(st.config.Endpoint) {
+		seekable, cleanup, err := spoolIfUnseekable(reader)
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
+		reader = seekable
 	}
 
 	// Build input
