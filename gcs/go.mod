@@ -3,7 +3,7 @@ module github.com/KARTIKrocks/objstore/gcs
 go 1.26
 
 require (
-	cloud.google.com/go/storage v1.63.1
+	cloud.google.com/go/storage v1.64.0
 	github.com/KARTIKrocks/objstore v0.1.4
 	google.golang.org/api v0.289.0
 )
