@@ -1,0 +1,4 @@
+{
+  "disabledRules": ["go-exported-docs", "functional-options-threading", "root-module-dependency-purity"],
+  "instructions": "Examples are illustrative, copied by users, and not part of the public API or coverage target. Relax the disabled rules above, but still ensure they compile, demonstrate correct API usage against the real Storage interface, and don't ignore an error in a way that misleads a reader copying the code."
+}
