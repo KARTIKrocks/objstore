@@ -240,16 +240,16 @@ func (s *LocalStorage) Get(ctx context.Context, path string, opts ...GetOption) 
 
 	info, err := file.Stat()
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, err
 	}
 	if options.Offset >= info.Size() {
-		file.Close()
+		_ = file.Close()
 		return nil, ErrInvalidRange
 	}
 
 	if _, err := file.Seek(options.Offset, io.SeekStart); err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, err
 	}
 
