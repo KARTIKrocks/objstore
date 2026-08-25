@@ -51,6 +51,16 @@ type Config struct {
 
 	// DefaultACL is the default ACL for uploaded files.
 	DefaultACL string
+
+	// UploadPartSize is the part size, in bytes, used to buffer and upload a
+	// Put body once it exceeds this size. Must be at least 5MiB (S3's minimum
+	// part size) when set. Zero uses the AWS SDK's default (5MiB).
+	UploadPartSize int64
+
+	// UploadConcurrency is the number of parts uploaded in parallel once a Put
+	// body is large enough to require multipart upload. Zero uses the AWS
+	// SDK's default (5).
+	UploadConcurrency int
 }
 
 // DefaultConfig returns a default S3 configuration.
@@ -107,6 +117,14 @@ func (c Config) WithBaseURL(url string) Config {
 // WithDefaultACL returns a new config with the specified default ACL.
 func (c Config) WithDefaultACL(acl string) Config {
 	c.DefaultACL = acl
+	return c
+}
+
+// WithUploadConcurrency returns a new config with the specified multipart
+// upload part size (bytes) and concurrency (parallel parts in flight).
+func (c Config) WithUploadConcurrency(partSize int64, concurrency int) Config {
+	c.UploadPartSize = partSize
+	c.UploadConcurrency = concurrency
 	return c
 }
 
@@ -179,10 +197,19 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	// Create S3 client
 	client := s3.NewFromConfig(awsCfg, s3Opts...)
 
+	uploader := manager.NewUploader(client, func(u *manager.Uploader) { //nolint:staticcheck // see Storage.uploader
+		if cfg.UploadPartSize > 0 {
+			u.PartSize = cfg.UploadPartSize
+		}
+		if cfg.UploadConcurrency > 0 {
+			u.Concurrency = cfg.UploadConcurrency
+		}
+	})
+
 	return &Storage{
 		client:        client,
 		presignClient: s3.NewPresignClient(client),
-		uploader:      manager.NewUploader(client), //nolint:staticcheck // see Storage.uploader
+		uploader:      uploader,
 		config:        cfg,
 	}, nil
 }
@@ -248,6 +275,7 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "PreconditionFailed" {
 			return nil, objstore.ErrAlreadyExists
 		}
+		st.abortOrphanedMultipart(key, err)
 		return nil, err
 	}
 
@@ -264,6 +292,29 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 		LastModified: time.Now(),
 		Metadata:     options.Metadata,
 	}, nil
+}
+
+// abortOrphanedMultipart best-effort cleans up a multipart upload that
+// manager.Uploader failed to abort itself. Its own abort attempt reuses the
+// ctx passed to Upload, so when that ctx is what caused the failure (a
+// deadline or cancellation), the abort call fails too and the already
+// uploaded parts are left on S3 accruing storage cost. Retrying the abort
+// with a fresh, short-lived context recovers that case; it is a no-op (and
+// its error is discarded) when there is nothing to abort or the original
+// abort already succeeded.
+func (st *Storage) abortOrphanedMultipart(key string, uploadErr error) {
+	var failure manager.MultiUploadFailure //nolint:staticcheck // see Storage.uploader
+	if !errors.As(uploadErr, &failure) || failure.UploadID() == "" {
+		return
+	}
+
+	abortCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, _ = st.client.AbortMultipartUpload(abortCtx, &s3.AbortMultipartUploadInput{
+		Bucket:   aws.String(st.config.Bucket),
+		Key:      aws.String(key),
+		UploadId: aws.String(failure.UploadID()),
+	})
 }
 
 // Get retrieves content from S3.
