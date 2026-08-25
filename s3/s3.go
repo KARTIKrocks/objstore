@@ -162,6 +162,9 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 		return nil, fmt.Errorf("%w: UploadPartSize must be at least %d bytes (S3's minimum part size)",
 			objstore.ErrInvalidConfig, manager.MinUploadPartSize)
 	}
+	if cfg.UploadConcurrency < 0 {
+		return nil, fmt.Errorf("%w: UploadConcurrency must not be negative", objstore.ErrInvalidConfig)
+	}
 
 	// Build AWS config options
 	var awsOpts []func(*config.LoadOptions) error
