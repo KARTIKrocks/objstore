@@ -220,6 +220,13 @@ io.Copy(dst, reader)
 // Helper functions
 data, _ := objstore.GetBytes(ctx, store, "data.bin")
 text, _ := objstore.GetString(ctx, store, "hello.txt")
+
+// Partial (ranged) download — e.g. resuming a download or seeking into a video
+reader, err := store.Get(ctx, "videos/movie.mp4", objstore.WithRange(1024, 4096)) // bytes [1024, 5120)
+reader, err := store.Get(ctx, "videos/movie.mp4", objstore.WithRange(1024, 0))    // from byte 1024 to EOF
+if errors.Is(err, objstore.ErrInvalidRange) {
+    // offset is negative or at/beyond the end of the file
+}
 ```
 
 ### Delete
@@ -466,6 +473,8 @@ case errors.Is(err, objstore.ErrInvalidPath):
     // Invalid path (e.g., path traversal attempt)
 case errors.Is(err, objstore.ErrPermission):
     // Permission denied
+case errors.Is(err, objstore.ErrInvalidRange):
+    // Requested byte range (WithRange) is negative or beyond the file's end
 case errors.Is(err, objstore.ErrNotImplemented):
     // Operation not supported by this backend
 default:

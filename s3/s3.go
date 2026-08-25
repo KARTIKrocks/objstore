@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -302,21 +303,48 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 }
 
 // Get retrieves content from S3.
-func (st *Storage) Get(ctx context.Context, path string) (io.ReadCloser, error) {
+func (st *Storage) Get(ctx context.Context, path string, opts ...objstore.GetOption) (io.ReadCloser, error) {
 	key := st.key(path)
 
-	result, err := st.client.GetObject(ctx, &s3.GetObjectInput{
+	options := objstore.ApplyGetOptions(opts)
+	if options.Offset < 0 {
+		return nil, objstore.ErrInvalidRange
+	}
+
+	input := &s3.GetObjectInput{
 		Bucket: aws.String(st.config.Bucket),
 		Key:    aws.String(key),
-	})
+	}
+	if rng := formatRange(options); rng != "" {
+		input.Range = aws.String(rng)
+	}
+
+	result, err := st.client.GetObject(ctx, input)
 	if err != nil {
 		if isNotFoundError(err) {
 			return nil, objstore.ErrNotFound
+		}
+		if isInvalidRangeError(err) {
+			return nil, objstore.ErrInvalidRange
 		}
 		return nil, err
 	}
 
 	return result.Body, nil
+}
+
+// formatRange builds an HTTP Range header value from GetOptions, or "" if no
+// range was requested. A Length large enough that Offset+Length-1 would
+// overflow int64 falls back to an open-ended range, which is equivalent for
+// any real object.
+func formatRange(options *objstore.GetOptions) string {
+	if options.Offset == 0 && options.Length <= 0 {
+		return ""
+	}
+	if options.Length > 0 && options.Length-1 <= math.MaxInt64-options.Offset {
+		return fmt.Sprintf("bytes=%d-%d", options.Offset, options.Offset+options.Length-1)
+	}
+	return fmt.Sprintf("bytes=%d-", options.Offset)
 }
 
 // Delete removes a file from S3.
@@ -631,5 +659,17 @@ func isNotFoundError(err error) bool {
 		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "NoSuchKey"
 	}
 
+	return false
+}
+
+// isInvalidRangeError checks if an error is S3's response to a Range header
+// that falls outside the object's bounds.
+func isInvalidRangeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if apiErr, ok := errors.AsType[smithy.APIError](err); ok {
+		return apiErr.ErrorCode() == "InvalidRange"
+	}
 	return false
 }

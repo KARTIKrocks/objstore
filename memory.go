@@ -100,8 +100,13 @@ func (s *MemoryStorage) Put(ctx context.Context, path string, reader io.Reader, 
 }
 
 // Get retrieves content from memory.
-func (s *MemoryStorage) Get(ctx context.Context, path string) (io.ReadCloser, error) {
+func (s *MemoryStorage) Get(ctx context.Context, path string, opts ...GetOption) (io.ReadCloser, error) {
 	path = NormalizePath(path)
+
+	options := ApplyGetOptions(opts)
+	if options.Offset < 0 {
+		return nil, ErrInvalidRange
+	}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -111,7 +116,23 @@ func (s *MemoryStorage) Get(ctx context.Context, path string) (io.ReadCloser, er
 		return nil, ErrNotFound
 	}
 
-	return io.NopCloser(bytes.NewReader(file.data)), nil
+	if options.Offset == 0 && options.Length <= 0 {
+		return io.NopCloser(bytes.NewReader(file.data)), nil
+	}
+
+	size := int64(len(file.data))
+	if options.Offset >= size {
+		return nil, ErrInvalidRange
+	}
+
+	end := size
+	if options.Length > 0 {
+		if remaining := size - options.Offset; options.Length < remaining {
+			end = options.Offset + options.Length
+		}
+	}
+
+	return io.NopCloser(bytes.NewReader(file.data[options.Offset:end])), nil
 }
 
 // Delete removes a file from memory.

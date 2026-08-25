@@ -25,6 +25,13 @@ func (cr *ctxReader) Read(p []byte) (n int, err error) {
 	}
 }
 
+// limitedReadCloser bounds reads from an underlying io.Closer, closing it
+// (rather than just abandoning it) once the caller is done.
+type limitedReadCloser struct {
+	io.Reader
+	io.Closer
+}
+
 // LocalConfig holds configuration for local filesystem storage.
 type LocalConfig struct {
 	// BasePath is the root directory for storage.
@@ -204,9 +211,14 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 }
 
 // Get retrieves content from the local filesystem.
-func (s *LocalStorage) Get(ctx context.Context, path string) (io.ReadCloser, error) {
+func (s *LocalStorage) Get(ctx context.Context, path string, opts ...GetOption) (io.ReadCloser, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+
+	options := ApplyGetOptions(opts)
+	if options.Offset < 0 {
+		return nil, ErrInvalidRange
 	}
 
 	fullPath, err := s.fullPath(path)
@@ -222,7 +234,29 @@ func (s *LocalStorage) Get(ctx context.Context, path string) (io.ReadCloser, err
 		return nil, fmt.Errorf("%w: %v", ErrPermission, err)
 	}
 
-	return file, nil
+	if options.Offset == 0 && options.Length <= 0 {
+		return file, nil
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+	if options.Offset >= info.Size() {
+		file.Close()
+		return nil, ErrInvalidRange
+	}
+
+	if _, err := file.Seek(options.Offset, io.SeekStart); err != nil {
+		file.Close()
+		return nil, err
+	}
+
+	if options.Length <= 0 {
+		return file, nil
+	}
+	return &limitedReadCloser{Reader: io.LimitReader(file, options.Length), Closer: file}, nil
 }
 
 // Delete removes a file from the local filesystem.
