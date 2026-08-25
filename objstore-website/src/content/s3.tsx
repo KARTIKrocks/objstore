@@ -45,6 +45,34 @@ export default function S3Docs() {
         WithBucket("my-bucket").
         WithPrefix("uploads/user-123"),
 )`} />
+
+      <h3 className="text-lg font-semibold text-text-heading mt-8 mb-2">Multipart uploads</h3>
+      <p className="text-text-muted mb-3">
+        <code className="font-mono">Put</code> uploads through the AWS SDK's multipart uploader, so
+        it isn't capped at S3's 5GB single-<code className="font-mono">PutObject</code> limit — bodies
+        larger than 5MiB are automatically split into parts and uploaded with bounded memory,
+        regardless of whether the source <code className="font-mono">io.Reader</code> is seekable.
+        With default settings the ceiling is 10,000 parts × 5MiB ≈ 48.8GB; for anything larger,
+        raise the part size with <code className="font-mono">WithUploadPartSize</code> (S3 allows up
+        to 5GiB per part, giving headroom well past S3's actual 5TB max object size). By default up
+        to 5 parts (5MiB each, 25MiB total) are buffered in memory at once — tune part size and
+        parallelism independently:
+      </p>
+      <CodeBlock code={`// Lower memory ceiling: one 8MiB part in flight at a time.
+store, err := s3.New(ctx,
+    s3.DefaultConfig().
+        WithBucket("my-bucket").
+        WithUploadPartSize(8*1024*1024).
+        WithUploadConcurrency(1),
+)`} />
+      <p className="text-text-muted mt-4 mb-3">
+        An <code className="font-mono">ETag</code> returned for an object uploaded via multipart is
+        S3's composite multipart ETag (<code className="font-mono">"&lt;hex&gt;-&lt;partcount&gt;"</code>),
+        not a plain content MD5 — this differs from small objects (&lt;5MiB), which still get a
+        plain-MD5 <code className="font-mono">ETag</code> from a direct <code className="font-mono">PutObject</code>.
+        Treat <code className="font-mono">FileInfo.ETag</code> as an opaque version tag, not a
+        content hash, if your objects may cross that size threshold.
+      </p>
     </section>
   );
 }
