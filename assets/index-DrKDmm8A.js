@@ -81,7 +81,13 @@ store, err := objstore.NewLocalStorage(config)`}),(0,m.jsx)(`p`,{className:`text
     s3.DefaultConfig().
         WithBucket("my-bucket").
         WithPrefix("uploads/user-123"),
-)`})]})}function go(){return(0,m.jsxs)(`section`,{id:`backends-gcs`,className:`py-10 border-b border-border`,children:[(0,m.jsx)(`h2`,{className:`text-2xl font-bold text-text-heading mb-2`,children:`Google Cloud Storage`}),(0,m.jsxs)(`p`,{className:`text-text-muted mb-3`,children:[`GCS backend lives in the `,(0,m.jsx)(`code`,{className:`text-accent font-mono`,children:`/gcs`}),` subpackage. Supports service-account files, JSON credentials, authorized-user credentials, and Application Default Credentials (GCE, Cloud Run, GKE, etc.).`]}),(0,m.jsx)(`code`,{className:`text-sm bg-bg-card px-2 py-1 rounded text-accent font-mono`,children:`import "github.com/KARTIKrocks/objstore/gcs"`}),(0,m.jsx)(`h3`,{className:`text-lg font-semibold text-text-heading mt-6 mb-2`,children:`Service-account file`}),(0,m.jsx)(L,{code:`store, err := gcs.New(ctx,
+)`}),(0,m.jsx)(`h3`,{className:`text-lg font-semibold text-text-heading mt-8 mb-2`,children:`Multipart uploads`}),(0,m.jsxs)(`p`,{className:`text-text-muted mb-3`,children:[(0,m.jsx)(`code`,{className:`font-mono`,children:`Put`}),` uploads through the AWS SDK's multipart uploader, so it isn't capped at S3's 5GB single-`,(0,m.jsx)(`code`,{className:`font-mono`,children:`PutObject`}),` limit — bodies larger than 5MiB are automatically split into parts and uploaded with bounded memory, regardless of whether the source `,(0,m.jsx)(`code`,{className:`font-mono`,children:`io.Reader`}),` is seekable. With default settings the ceiling is 10,000 parts × 5MiB ≈ 48.8GB; for anything larger, raise the part size with `,(0,m.jsx)(`code`,{className:`font-mono`,children:`WithUploadPartSize`}),` (S3 allows up to 5GiB per part, giving headroom well past S3's actual 5TB max object size). By default up to 5 parts (5MiB each, 25MiB total) are buffered in memory at once — tune part size and parallelism independently:`]}),(0,m.jsx)(L,{code:`// Lower memory ceiling: one 8MiB part in flight at a time.
+store, err := s3.New(ctx,
+    s3.DefaultConfig().
+        WithBucket("my-bucket").
+        WithUploadPartSize(8*1024*1024).
+        WithUploadConcurrency(1),
+)`}),(0,m.jsxs)(`p`,{className:`text-text-muted mt-4 mb-3`,children:[`An `,(0,m.jsx)(`code`,{className:`font-mono`,children:`ETag`}),` returned for an object uploaded via multipart is S3's composite multipart ETag (`,(0,m.jsx)(`code`,{className:`font-mono`,children:`"<hex>-<partcount>"`}),`), not a plain content MD5 — this differs from small objects (<5MiB), which still get a plain-MD5 `,(0,m.jsx)(`code`,{className:`font-mono`,children:`ETag`}),` from a direct `,(0,m.jsx)(`code`,{className:`font-mono`,children:`PutObject`}),`. Treat `,(0,m.jsx)(`code`,{className:`font-mono`,children:`FileInfo.ETag`}),` as an opaque version tag, not a content hash, if your objects may cross that size threshold.`]})]})}function go(){return(0,m.jsxs)(`section`,{id:`backends-gcs`,className:`py-10 border-b border-border`,children:[(0,m.jsx)(`h2`,{className:`text-2xl font-bold text-text-heading mb-2`,children:`Google Cloud Storage`}),(0,m.jsxs)(`p`,{className:`text-text-muted mb-3`,children:[`GCS backend lives in the `,(0,m.jsx)(`code`,{className:`text-accent font-mono`,children:`/gcs`}),` subpackage. Supports service-account files, JSON credentials, authorized-user credentials, and Application Default Credentials (GCE, Cloud Run, GKE, etc.).`]}),(0,m.jsx)(`code`,{className:`text-sm bg-bg-card px-2 py-1 rounded text-accent font-mono`,children:`import "github.com/KARTIKrocks/objstore/gcs"`}),(0,m.jsx)(`h3`,{className:`text-lg font-semibold text-text-heading mt-6 mb-2`,children:`Service-account file`}),(0,m.jsx)(L,{code:`store, err := gcs.New(ctx,
     gcs.DefaultConfig().
         WithBucket("my-bucket").
         WithCredentialsFile("/path/to/service-account.json"),
@@ -140,7 +146,11 @@ if err == objstore.ErrNotFound {
 }
 defer reader.Close()
 io.Copy(dst, reader)`}),(0,m.jsx)(`p`,{className:`text-text-muted mt-4 mb-3`,children:`Or use the helpers when the file fits in memory:`}),(0,m.jsx)(L,{code:`data, _ := objstore.GetBytes(ctx, store, "data.bin")
-text, _ := objstore.GetString(ctx, store, "hello.txt")`})]}),(0,m.jsxs)(`div`,{id:`ops-delete`,className:`mt-10`,children:[(0,m.jsx)(`h3`,{className:`text-xl font-semibold text-text-heading mb-2`,children:`Delete`}),(0,m.jsx)(L,{code:`err := store.Delete(ctx, "images/photo.jpg")
+text, _ := objstore.GetString(ctx, store, "hello.txt")`}),(0,m.jsxs)(`p`,{className:`text-text-muted mt-4 mb-3`,children:[`Fetch a byte range instead of the whole object — useful for resuming a download or seeking into a large file. Implemented natively on every backend (S3 `,(0,m.jsx)(`code`,{className:`font-mono`,children:`Range`}),` header, GCS `,(0,m.jsx)(`code`,{className:`font-mono`,children:`NewRangeReader`}),`, Azure `,(0,m.jsx)(`code`,{className:`font-mono`,children:`HTTPRange`}),`, and direct seeking/slicing for Local and Memory):`]}),(0,m.jsx)(L,{code:`reader, err := store.Get(ctx, "videos/movie.mp4", objstore.WithRange(1024, 4096)) // bytes [1024, 5120)
+reader, err := store.Get(ctx, "videos/movie.mp4", objstore.WithRange(1024, 0))    // from byte 1024 to EOF
+if err == objstore.ErrInvalidRange {
+    // offset is negative or at/beyond the end of the file
+}`})]}),(0,m.jsxs)(`div`,{id:`ops-delete`,className:`mt-10`,children:[(0,m.jsx)(`h3`,{className:`text-xl font-semibold text-text-heading mb-2`,children:`Delete`}),(0,m.jsx)(L,{code:`err := store.Delete(ctx, "images/photo.jpg")
 
 // Delete every object under a prefix (works on every backend)
 objstore.DeletePrefix(ctx, store, "images/user-123/")
@@ -245,6 +255,8 @@ case errors.Is(err, objstore.ErrAlreadyExists):
     // File already exists (when overwrite=false)
 case errors.Is(err, objstore.ErrInvalidPath):
     // Invalid path (e.g., path traversal attempt)
+case errors.Is(err, objstore.ErrInvalidRange):
+    // Requested byte range (WithRange) is negative or beyond the file's end
 case errors.Is(err, objstore.ErrPermission):
     // Permission denied
 case errors.Is(err, objstore.ErrNotImplemented):
