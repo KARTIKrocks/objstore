@@ -96,6 +96,20 @@ store, err := s3.New(ctx,
 )
 ```
 
+`Put` uploads through the AWS SDK's multipart uploader, so it isn't capped at S3's 5GB single-`PutObject` limit — bodies larger than 5MiB are automatically split into parts and uploaded with bounded memory, regardless of whether the source `io.Reader` is seekable. With default settings the ceiling is 10,000 parts × 5MiB ≈ 48.8GB; for anything larger, raise the part size with `WithUploadPartSize` (S3 allows up to 5GiB per part, giving headroom well past S3's actual 5TB max object size). By default up to 5 parts (5MiB each, 25MiB total) are buffered in memory at once; tune part size and parallelism independently with `WithUploadPartSize` / `WithUploadConcurrency`:
+
+```go
+// Lower memory ceiling: one 8MiB part in flight at a time.
+store, err := s3.New(ctx,
+    s3.DefaultConfig().
+        WithBucket("my-bucket").
+        WithUploadPartSize(8*1024*1024).
+        WithUploadConcurrency(1),
+)
+```
+
+An `ETag` returned for an object uploaded via multipart is S3's composite multipart ETag (`"<hex>-<partcount>"`), not a plain content MD5 — this differs from small objects (<5MiB), which still get a plain-MD5 `ETag` from a direct `PutObject`. Treat `FileInfo.ETag` as an opaque version tag, not a content hash, if your objects may cross that size threshold.
+
 ### Google Cloud Storage
 
 ```go
