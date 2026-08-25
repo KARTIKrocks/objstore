@@ -18,6 +18,8 @@ case errors.Is(err, objstore.ErrAlreadyExists):
     // File already exists (when overwrite=false)
 case errors.Is(err, objstore.ErrInvalidPath):
     // Invalid path (e.g., path traversal attempt)
+case errors.Is(err, objstore.ErrInvalidRange):
+    // Requested byte range (WithRange) is negative or beyond the file's end
 case errors.Is(err, objstore.ErrPermission):
     // Permission denied
 case errors.Is(err, objstore.ErrNotImplemented):

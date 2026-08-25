@@ -54,6 +54,18 @@ io.Copy(dst, reader)`} />
         <p className="text-text-muted mt-4 mb-3">Or use the helpers when the file fits in memory:</p>
         <CodeBlock code={`data, _ := objstore.GetBytes(ctx, store, "data.bin")
 text, _ := objstore.GetString(ctx, store, "hello.txt")`} />
+
+        <p className="text-text-muted mt-4 mb-3">
+          Fetch a byte range instead of the whole object — useful for resuming a download or
+          seeking into a large file. Implemented natively on every backend (S3 <code className="font-mono">Range</code> header,
+          GCS <code className="font-mono">NewRangeReader</code>, Azure <code className="font-mono">HTTPRange</code>, and direct
+          seeking/slicing for Local and Memory):
+        </p>
+        <CodeBlock code={`reader, err := store.Get(ctx, "videos/movie.mp4", objstore.WithRange(1024, 4096)) // bytes [1024, 5120)
+reader, err := store.Get(ctx, "videos/movie.mp4", objstore.WithRange(1024, 0))    // from byte 1024 to EOF
+if err == objstore.ErrInvalidRange {
+    // offset is negative or at/beyond the end of the file
+}`} />
       </div>
 
       <div id="ops-delete" className="mt-10">
