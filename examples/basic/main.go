@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -27,6 +28,7 @@ func main() {
 	uploadAndRead(ctx, store)
 	copyMoveAndList(ctx, store)
 	urlsAndTypes(ctx, store)
+	rangedRead(ctx, store)
 	deleteAndOverwrite(ctx, store)
 
 	// Cleanup
@@ -126,6 +128,27 @@ func urlsAndTypes(ctx context.Context, store *objstore.LocalStorage) {
 	fmt.Printf("\nGenerated filename: %s\n", objstore.GenerateFileName("photo.jpg"))
 	fmt.Printf("Generated path: %s\n", objstore.GeneratePath("photo.jpg", "uploads"))
 	fmt.Printf("Generated hashed path: %s\n", objstore.GenerateHashedPath("photo.jpg", "uploads", 2))
+}
+
+func rangedRead(ctx context.Context, store *objstore.LocalStorage) {
+	// Read only a byte range instead of the whole object — "Hello, objstore!"[7:13] = "objsto"
+	reader, err := store.Get(ctx, "hello.txt", objstore.WithRange(7, 6))
+	if err != nil {
+		log.Fatal(err)
+	}
+	partial, err := io.ReadAll(reader)
+	reader.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("\nRanged read (offset=7, length=6): %q\n", string(partial))
+
+	// An offset at or beyond the file's end is rejected the same way cloud
+	// providers reject an unsatisfiable range (HTTP 416).
+	_, err = store.Get(ctx, "hello.txt", objstore.WithRange(1000, 0))
+	if errors.Is(err, objstore.ErrInvalidRange) {
+		fmt.Println("Correctly got ErrInvalidRange for an out-of-bounds offset")
+	}
 }
 
 func deleteAndOverwrite(ctx context.Context, store *objstore.LocalStorage) {
