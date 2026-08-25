@@ -130,6 +130,64 @@ func TestLocalStorage_GetNotFound(t *testing.T) {
 	}
 }
 
+func TestLocalStorage_GetRange(t *testing.T) {
+	ctx := context.Background()
+	store := newTestLocalStorage(t)
+
+	content := "0123456789"
+	store.Put(ctx, "range.txt", strings.NewReader(content))
+
+	tests := []struct {
+		name   string
+		offset int64
+		length int64
+		want   string
+	}{
+		{"first three bytes", 0, 3, "012"},
+		{"middle slice", 3, 4, "3456"},
+		{"offset to end (length<=0)", 7, 0, "789"},
+		{"offset to end (negative length)", 7, -1, "789"},
+		{"length past EOF is clamped", 8, 100, "89"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader, err := store.Get(ctx, "range.txt", WithRange(tt.offset, tt.length))
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			defer reader.Close()
+
+			data, err := io.ReadAll(reader)
+			if err != nil {
+				t.Fatalf("ReadAll: %v", err)
+			}
+			if string(data) != tt.want {
+				t.Errorf("content = %q, want %q", string(data), tt.want)
+			}
+		})
+	}
+}
+
+func TestLocalStorage_GetRangeInvalid(t *testing.T) {
+	ctx := context.Background()
+	store := newTestLocalStorage(t)
+
+	store.Put(ctx, "range.txt", strings.NewReader("0123456789"))
+
+	if _, err := store.Get(ctx, "range.txt", WithRange(-1, 5)); !errors.Is(err, ErrInvalidRange) {
+		t.Errorf("negative offset: expected ErrInvalidRange, got %v", err)
+	}
+	if _, err := store.Get(ctx, "range.txt", WithRange(11, 5)); !errors.Is(err, ErrInvalidRange) {
+		t.Errorf("offset past EOF: expected ErrInvalidRange, got %v", err)
+	}
+	// An offset exactly at EOF has no bytes to satisfy, matching the 416/InvalidRange
+	// a real HTTP range request would get from S3/GCS/Azure for the same request.
+	if _, err := store.Get(ctx, "range.txt", WithRange(10, 0)); !errors.Is(err, ErrInvalidRange) {
+		t.Errorf("offset at EOF: expected ErrInvalidRange, got %v", err)
+	}
+}
+
 func TestLocalStorage_Delete(t *testing.T) {
 	ctx := context.Background()
 	store := newTestLocalStorage(t)

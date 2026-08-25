@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-08-25
+
+### Added
+
+- `Get` now accepts `WithRange(offset, length)` to fetch a byte range instead of the whole object, implemented natively across all five backends (S3 `Range` header, GCS `NewRangeReader`, Azure `HTTPRange`, and direct seeking/slicing for local and memory). A `length <= 0` reads from `offset` through the end of the file. New sentinel error `ErrInvalidRange` for a negative offset or an offset at or beyond the file's end — consistent across backends with the unsatisfiable-range behavior (416/`InvalidRange`) cloud providers already return in that case
+- `Get`'s signature grows a variadic `opts ...GetOption` parameter; existing `store.Get(ctx, path)` call sites are unaffected
+
 ## [0.1.4] - 2026-07-12
 
 ### Fixed

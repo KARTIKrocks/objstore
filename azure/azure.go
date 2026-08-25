@@ -203,13 +203,32 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 }
 
 // Get retrieves content from Azure Blob Storage.
-func (st *Storage) Get(ctx context.Context, path string) (io.ReadCloser, error) {
+func (st *Storage) Get(ctx context.Context, path string, opts ...objstore.GetOption) (io.ReadCloser, error) {
 	blobName := st.blobName(path)
 
-	resp, err := st.client.DownloadStream(ctx, st.config.ContainerName, blobName, nil)
+	options := objstore.ApplyGetOptions(opts)
+	if options.Offset < 0 {
+		return nil, objstore.ErrInvalidRange
+	}
+
+	var downloadOpts *azblob.DownloadStreamOptions
+	if options.Offset > 0 || options.Length > 0 {
+		count := options.Length
+		if count < 0 {
+			count = 0 // CountToEnd
+		}
+		downloadOpts = &azblob.DownloadStreamOptions{
+			Range: blob.HTTPRange{Offset: options.Offset, Count: count},
+		}
+	}
+
+	resp, err := st.client.DownloadStream(ctx, st.config.ContainerName, blobName, downloadOpts)
 	if err != nil {
 		if isNotFoundError(err) {
 			return nil, objstore.ErrNotFound
+		}
+		if bloberror.HasCode(err, bloberror.InvalidRange) {
+			return nil, objstore.ErrInvalidRange
 		}
 		return nil, err
 	}

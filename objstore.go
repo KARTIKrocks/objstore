@@ -19,6 +19,7 @@ var (
 	ErrInvalidConfig    = errors.New("objstore: invalid configuration")
 	ErrSignatureInvalid = errors.New("objstore: signed URL signature invalid")
 	ErrSignatureExpired = errors.New("objstore: signed URL expired")
+	ErrInvalidRange     = errors.New("objstore: invalid byte range")
 )
 
 // Storage defines the interface for storage backends.
@@ -28,7 +29,8 @@ type Storage interface {
 
 	// Get retrieves content from the specified path.
 	// The caller is responsible for closing the returned ReadCloser.
-	Get(ctx context.Context, path string) (io.ReadCloser, error)
+	// With WithRange, only the requested byte range is returned.
+	Get(ctx context.Context, path string, opts ...GetOption) (io.ReadCloser, error)
 
 	// Delete removes the file at the specified path.
 	Delete(ctx context.Context, path string) error
@@ -128,6 +130,33 @@ func WithOverwrite(overwrite bool) PutOption {
 	return func(o *PutOptions) {
 		o.Overwrite = overwrite
 	}
+}
+
+// GetOptions configures retrieval behavior.
+type GetOptions struct {
+	Offset int64 // Byte offset to start reading from (0 = start of file)
+	Length int64 // Number of bytes to read (<= 0 means read to end of file)
+}
+
+// GetOption is a function that modifies GetOptions.
+type GetOption func(*GetOptions)
+
+// WithRange restricts Get to the byte range [offset, offset+length).
+// A length <= 0 reads from offset through the end of the file.
+func WithRange(offset, length int64) GetOption {
+	return func(o *GetOptions) {
+		o.Offset = offset
+		o.Length = length
+	}
+}
+
+// ApplyGetOptions applies GetOption functions to GetOptions.
+func ApplyGetOptions(opts []GetOption) *GetOptions {
+	options := &GetOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
+	return options
 }
 
 // ListOptions configures list behavior.

@@ -13,6 +13,7 @@ import (
 	"github.com/KARTIKrocks/objstore"
 
 	storage "cloud.google.com/go/storage"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
@@ -203,18 +204,48 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 }
 
 // Get retrieves content from GCS.
-func (st *Storage) Get(ctx context.Context, path string) (io.ReadCloser, error) {
+func (st *Storage) Get(ctx context.Context, path string, opts ...objstore.GetOption) (io.ReadCloser, error) {
 	objectName := st.objectName(path)
 
-	reader, err := st.bucket.Object(objectName).NewReader(ctx)
+	options := objstore.ApplyGetOptions(opts)
+	if options.Offset < 0 {
+		return nil, objstore.ErrInvalidRange
+	}
+
+	obj := st.bucket.Object(objectName)
+
+	var reader *storage.Reader
+	var err error
+	if options.Offset == 0 && options.Length <= 0 {
+		reader, err = obj.NewReader(ctx)
+	} else {
+		length := options.Length
+		if length <= 0 {
+			length = -1 // read through the end of the object
+		}
+		reader, err = obj.NewRangeReader(ctx, options.Offset, length)
+	}
 	if err != nil {
 		if errors.Is(err, storage.ErrObjectNotExist) {
 			return nil, objstore.ErrNotFound
+		}
+		if isInvalidRangeError(err) {
+			return nil, objstore.ErrInvalidRange
 		}
 		return nil, err
 	}
 
 	return reader, nil
+}
+
+// isInvalidRangeError checks if an error is GCS's response to a byte range
+// that falls outside the object's bounds.
+func isInvalidRangeError(err error) bool {
+	var apiErr *googleapi.Error
+	if errors.As(err, &apiErr) {
+		return apiErr.Code == 416
+	}
+	return false
 }
 
 // Delete removes a file from GCS.
