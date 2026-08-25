@@ -1,0 +1,25 @@
+{
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "description": "Repository conventions: multi-module layout, build/test/lint commands, architecture of the Storage interface and helpers, config-builder pattern, documentation-site workflow."
+    },
+    {
+      "path": "doc.go",
+      "description": "Package-level overview and usage patterns for the Storage API."
+    },
+    {
+      "path": "objstore.go",
+      "description": "The Storage interface, FileInfo/ListResult shapes, sentinel errors, and the shared PutOptions/GetOptions/ListOptions/SignedURLOptions option types every backend implements against.",
+      "scope": ["s3/**/*.go", "gcs/**/*.go", "azure/**/*.go", "local.go", "memory.go", "helpers.go"]
+    },
+    {
+      "path": ".golangci.yml",
+      "description": "The linter ruleset already enforced in CI; avoid duplicating what golangci-lint already flags."
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "description": "Release process (tag root, bump sub-module requires, tag sub-modules) and PR/commit conventions."
+    }
+  ]
+}

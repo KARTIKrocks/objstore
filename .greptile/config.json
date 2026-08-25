@@ -1,0 +1,64 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "syntax", "style"],
+  "triggerOnUpdates": true,
+  "statusCheck": true,
+  "ignorePatterns": "**/mock_*.go\n**/*_mock.go\n**/testdata/**\n**/go.sum\n**/vendor/**\n**/node_modules/**\n**/package-lock.json\nobjstore-website/dist/**\nobjstore-website/node_modules/**",
+  "instructions": "objstore is a Go library providing a unified file-storage interface (github.com/KARTIKrocks/objstore) across local filesystem, AWS S3, Google Cloud Storage, Azure Blob Storage, and an in-memory backend for testing. Every backend implements the single objstore.Storage interface so application code can switch providers without changing call sites. This is a multi-module repo: root (Storage interface, shared option types, sentinel errors, LocalStorage, MemoryStorage, helpers — depends only on the stdlib and github.com/google/uuid), plus s3/, gcs/, azure/ as separate Go modules pulling in their own SDKs. Prioritize cross-backend behavioral consistency, correct error-sentinel mapping, and context/resource handling over style. See AGENTS.md for repo conventions and .greptile/rules.md for pattern rationale and worked examples from real bugs found in this codebase.",
+  "rules": [
+    {
+      "id": "backend-parity",
+      "rule": "A behavioral change to one Storage implementation (local.go, memory.go, s3/s3.go, gcs/gcs.go, azure/azure.go) — including edge cases like boundary conditions, zero-length inputs, or error conditions — must be mirrored in the others unless the difference is explicitly justified (e.g. a capability only one provider has). Do not treat 'it matches this backend's tests' as sufficient; the whole point of the Storage interface is that callers can swap backends without their code's behavior changing.",
+      "scope": ["*.go", "s3/**/*.go", "gcs/**/*.go", "azure/**/*.go"],
+      "severity": "high"
+    },
+    {
+      "id": "sentinel-error-mapping",
+      "rule": "Provider-specific errors (AWS SDK error codes, storage.ErrObjectNotExist, bloberror codes, os.IsNotExist, etc.) must be translated to the package's sentinel errors (ErrNotFound, ErrAlreadyExists, ErrInvalidPath, ErrPermission, ErrNotImplemented, ErrInvalidRange, ErrSignatureInvalid, ErrSignatureExpired) via a type-safe check (errors.As, errors.Is, or an SDK-provided predicate), never by matching on an error's string message. Flag any backend method that returns a raw provider error where a sentinel applies.",
+      "scope": ["**/*.go"],
+      "severity": "high"
+    },
+    {
+      "id": "offset-length-overflow",
+      "rule": "Any arithmetic that adds a caller-supplied offset and length (byte ranges, pagination bounds, buffer sizing) must not compute offset+length as an intermediate value unless it has first been bounded against a known size via subtraction (e.g. compare length against `size - offset`, not `offset + length` against `size`). Treat offset and length as adversarial int64 values that may each independently approach math.MaxInt64. This exact overflow (wrap to negative, then a slice/index panics or an SDK receives a malformed request) has been found and fixed twice in this codebase already — see .greptile/rules.md.",
+      "scope": ["objstore.go", "local.go", "memory.go", "s3/**/*.go", "gcs/**/*.go", "azure/**/*.go"],
+      "severity": "high"
+    },
+    {
+      "id": "context-cancellation",
+      "rule": "Every Storage method that performs I/O must accept and honor context cancellation (check ctx.Err() before starting local filesystem work; pass ctx through to every SDK call for cloud backends). Never store a context.Context in a struct field.",
+      "scope": ["**/*.go"],
+      "severity": "medium"
+    },
+    {
+      "id": "closer-hygiene",
+      "rule": "An io.ReadCloser, *os.File, or SDK response body/writer must be closed on every code path, including error paths reached after the resource was already acquired (e.g. an error from Stat/Seek/Read after os.Open must still close the file before returning). Prefer defer where the function returns the resource itself makes that impossible, use an explicit Close on each error branch.",
+      "scope": ["**/*.go"],
+      "severity": "medium"
+    },
+    {
+      "id": "functional-options-threading",
+      "rule": "A new Put/Get/List/SignedURL option must be added to the corresponding options struct (PutOptions/GetOptions/ListOptions/SignedURLOptions) and threaded through its Apply*Options helper, with any default set there — not special-cased inside a single backend's implementation.",
+      "scope": ["objstore.go", "s3/**/*.go", "gcs/**/*.go", "azure/**/*.go", "local.go", "memory.go"],
+      "severity": "medium"
+    },
+    {
+      "id": "path-traversal-safety",
+      "rule": "LocalStorage resolves caller-supplied paths against BasePath on a real filesystem. Any change to path-joining or validation logic must keep rejecting paths that escape BasePath (e.g. `../`, absolute paths, symlink tricks) with ErrInvalidPath, not just handle the paths the tests happen to cover.",
+      "scope": ["local.go"],
+      "severity": "high"
+    },
+    {
+      "id": "root-module-dependency-purity",
+      "rule": "The root module (files directly in the repository root) must depend only on the standard library and github.com/google/uuid. A new third-party dependency belongs in a sub-module (s3/, gcs/, azure/) if anywhere — never in root go.mod.",
+      "scope": ["*.go", "go.mod"],
+      "severity": "high"
+    },
+    {
+      "id": "go-exported-docs",
+      "rule": "Every new or newly-exported type, function, method, and constant must have a doc comment that starts with the identifier's own name.",
+      "scope": ["**/*.go"],
+      "severity": "low"
+    }
+  ]
+}
