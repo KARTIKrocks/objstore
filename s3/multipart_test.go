@@ -173,6 +173,21 @@ func TestNew_RejectsUploadPartSizeBelowMinimum(t *testing.T) {
 	}
 }
 
+// TestNew_RejectsNegativeUploadPartSize confirms a negative UploadPartSize is
+// rejected the same way a too-small positive one is, rather than silently
+// falling through to the SDK's default part size (a positive-only check would
+// treat "any negative value" as "unset").
+func TestNew_RejectsNegativeUploadPartSize(t *testing.T) {
+	_, err := New(context.Background(), Config{
+		Bucket:         "test-bucket",
+		Region:         "us-east-1",
+		UploadPartSize: -1,
+	})
+	if !errors.Is(err, objstore.ErrInvalidConfig) {
+		t.Errorf("err = %v, want objstore.ErrInvalidConfig", err)
+	}
+}
+
 // TestNew_AcceptsUploadPartSizeAtMinimum confirms exactly the minimum is
 // still valid (only values strictly below it are rejected).
 func TestNew_AcceptsUploadPartSizeAtMinimum(t *testing.T) {

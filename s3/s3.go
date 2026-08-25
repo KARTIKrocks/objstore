@@ -158,7 +158,7 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	if cfg.Bucket == "" {
 		return nil, fmt.Errorf("%w: bucket is required", objstore.ErrInvalidConfig)
 	}
-	if cfg.UploadPartSize > 0 && cfg.UploadPartSize < manager.MinUploadPartSize {
+	if cfg.UploadPartSize != 0 && cfg.UploadPartSize < manager.MinUploadPartSize {
 		return nil, fmt.Errorf("%w: UploadPartSize must be at least %d bytes (S3's minimum part size)",
 			objstore.ErrInvalidConfig, manager.MinUploadPartSize)
 	}
