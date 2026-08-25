@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	cloud.google.com/go/storage v1.65.0
-	github.com/KARTIKrocks/objstore v0.1.4
+	github.com/KARTIKrocks/objstore v0.1.5
 	google.golang.org/api v0.293.0
 )
 
