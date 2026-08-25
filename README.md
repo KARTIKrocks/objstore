@@ -96,6 +96,8 @@ store, err := s3.New(ctx,
 )
 ```
 
+`Put` uploads through the AWS SDK's multipart uploader, so it isn't capped at S3's 5GB single-`PutObject` limit — bodies larger than 5MiB are automatically split into parts and uploaded with bounded memory, regardless of whether the source `io.Reader` is seekable.
+
 ### Google Cloud Storage
 
 ```go

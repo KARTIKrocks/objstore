@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	smithy "github.com/aws/smithy-go"
@@ -114,6 +114,7 @@ func (c Config) WithDefaultACL(acl string) Config {
 type Storage struct {
 	client        *s3.Client
 	presignClient *s3.PresignClient
+	uploader      *manager.Uploader //nolint:staticcheck // feature/s3/transfermanager is pre-1.0 (breaking changes possible); manager remains GA and actively patched.
 	config        Config
 }
 
@@ -121,33 +122,6 @@ type Storage struct {
 // HTTP. An empty endpoint means AWS itself, which is always TLS.
 func isPlaintextEndpoint(endpoint string) bool {
 	return strings.HasPrefix(strings.ToLower(endpoint), "http://")
-}
-
-// spoolIfUnseekable returns r unchanged when it can already be rewound;
-// otherwise it copies r to a temp file and returns that. The returned cleanup
-// is always safe to call and removes any temp file.
-func spoolIfUnseekable(r io.Reader) (io.Reader, func(), error) {
-	if _, ok := r.(io.ReadSeeker); ok {
-		return r, func() {}, nil
-	}
-
-	f, err := os.CreateTemp("", "objstore-put-*")
-	if err != nil {
-		return nil, func() {}, fmt.Errorf("spool upload: %w", err)
-	}
-	cleanup := func() {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-	}
-	if _, err := io.Copy(f, r); err != nil {
-		cleanup()
-		return nil, func() {}, fmt.Errorf("spool upload: %w", err)
-	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		cleanup()
-		return nil, func() {}, fmt.Errorf("spool upload: %w", err)
-	}
-	return f, cleanup, nil
 }
 
 // New creates a new S3 storage.
@@ -208,6 +182,7 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	return &Storage{
 		client:        client,
 		presignClient: s3.NewPresignClient(client),
+		uploader:      manager.NewUploader(client), //nolint:staticcheck // see Storage.uploader
 		config:        cfg,
 	}, nil
 }
@@ -227,21 +202,6 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 	contentType := options.ContentType
 	if contentType == "" {
 		contentType = objstore.DetectContentType(path)
-	}
-
-	// SigV4 hashes the payload before sending, which means rewinding the body.
-	// Over TLS the SDK can avoid that by streaming with a trailing checksum, but
-	// against a plain-HTTP endpoint (local MinIO) it cannot, and an unseekable
-	// body fails with "failed to seek body to start". Spool such a body to a
-	// temp file so the SDK gets something rewindable, without holding the whole
-	// object in memory. TLS endpoints keep streaming untouched.
-	if isPlaintextEndpoint(st.config.Endpoint) {
-		seekable, cleanup, err := spoolIfUnseekable(reader)
-		if err != nil {
-			return nil, err
-		}
-		defer cleanup()
-		reader = seekable
 	}
 
 	// Build input
@@ -276,8 +236,12 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 		input.Metadata = options.Metadata
 	}
 
-	// Upload
-	result, err := st.client.PutObject(ctx, input)
+	// Upload — Uploader transparently switches to a multipart upload once the
+	// body exceeds its part size (default 5MiB), so a single Put is no longer
+	// capped at S3's 5GB PutObject limit. It also buffers each part into memory
+	// itself, so an unseekable reader (e.g. a network stream) no longer needs to
+	// be spooled to a temp file first.
+	result, err := st.uploader.Upload(ctx, input) //nolint:staticcheck // see Storage.uploader
 	if err != nil {
 		// Map precondition failed to ErrAlreadyExists
 		var apiErr smithy.APIError

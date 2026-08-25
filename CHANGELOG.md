@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **S3**: `Put` now uploads through the AWS SDK's `manager.Uploader`, which transparently switches to a multipart upload once the body exceeds its part size (default 5MiB). Previously every upload went through a single `PutObject` call, capping object size at S3's 5GB limit
+
+### Changed
+
+- **S3**: the temp-file spooling added in `v0.1.4` for unseekable request bodies over plain-HTTP endpoints (e.g. local MinIO) is no longer needed and has been removed — `manager.Uploader` already buffers each part in memory itself, so an unseekable reader works without ever touching disk
+
 ## [0.1.5] - 2026-08-25
 
 ### Added
