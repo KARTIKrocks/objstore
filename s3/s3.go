@@ -120,10 +120,17 @@ func (c Config) WithDefaultACL(acl string) Config {
 	return c
 }
 
-// WithUploadConcurrency returns a new config with the specified multipart
-// upload part size (bytes) and concurrency (parallel parts in flight).
-func (c Config) WithUploadConcurrency(partSize int64, concurrency int) Config {
+// WithUploadPartSize returns a new config with the specified multipart
+// upload part size, in bytes. Must be at least 5MiB (S3's minimum part size).
+func (c Config) WithUploadPartSize(partSize int64) Config {
 	c.UploadPartSize = partSize
+	return c
+}
+
+// WithUploadConcurrency returns a new config with the specified number of
+// parts uploaded in parallel once a Put body is large enough to require
+// multipart upload.
+func (c Config) WithUploadConcurrency(concurrency int) Config {
 	c.UploadConcurrency = concurrency
 	return c
 }
@@ -142,10 +149,18 @@ func isPlaintextEndpoint(endpoint string) bool {
 	return strings.HasPrefix(strings.ToLower(endpoint), "http://")
 }
 
+// abortTimeout bounds how long abortOrphanedMultipart's fallback cleanup
+// call can add to a failed Put's return time.
+const abortTimeout = 10 * time.Second
+
 // New creates a new S3 storage.
 func New(ctx context.Context, cfg Config) (*Storage, error) {
 	if cfg.Bucket == "" {
 		return nil, fmt.Errorf("%w: bucket is required", objstore.ErrInvalidConfig)
+	}
+	if cfg.UploadPartSize > 0 && cfg.UploadPartSize < manager.MinUploadPartSize {
+		return nil, fmt.Errorf("%w: UploadPartSize must be at least %d bytes (S3's minimum part size)",
+			objstore.ErrInvalidConfig, manager.MinUploadPartSize)
 	}
 
 	// Build AWS config options
@@ -203,6 +218,17 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 		}
 		if cfg.UploadConcurrency > 0 {
 			u.Concurrency = cfg.UploadConcurrency
+		}
+		// manager.Uploader has its own, separate RequestChecksumCalculation
+		// setting (default WhenSupported) that the plaintext-endpoint relaxation
+		// above does not reach — it only configures the underlying client, which
+		// a multipart upload's CreateMultipartUpload/UploadPart calls bypass in
+		// favor of this Uploader-level default. Mirror the same relaxation here
+		// so a multipart upload against a plain-HTTP endpoint doesn't attach a
+		// checksum header the endpoint may not expect, for the same reason a
+		// direct PutObject doesn't.
+		if isPlaintextEndpoint(cfg.Endpoint) {
+			u.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 		}
 	})
 
@@ -270,12 +296,16 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 	// be spooled to a temp file first.
 	result, err := st.uploader.Upload(ctx, input) //nolint:staticcheck // see Storage.uploader
 	if err != nil {
-		// Map precondition failed to ErrAlreadyExists
+		// A PreconditionFailed CompleteMultipartUpload still leaves the
+		// upload's parts sitting on S3 uncommitted (the object was never
+		// created), so this needs the same cleanup as any other multipart
+		// failure — run it before mapping the error, not instead of it.
+		st.abortOrphanedMultipart(key, err)
+
 		var apiErr smithy.APIError
 		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "PreconditionFailed" {
 			return nil, objstore.ErrAlreadyExists
 		}
-		st.abortOrphanedMultipart(key, err)
 		return nil, err
 	}
 
@@ -302,13 +332,21 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 // with a fresh, short-lived context recovers that case; it is a no-op (and
 // its error is discarded) when there is nothing to abort or the original
 // abort already succeeded.
+//
+// This runs synchronously, so a Put that fails this way can take up to
+// abortTimeout longer to return than the failure itself did. That's a
+// deliberate trade-off: Put's contract is that no S3 interaction continues
+// once it returns, which a fire-and-forget goroutine here would break for a
+// benefit (shaving a few seconds off an already-failed call) that matters far
+// less than either the cost being borne by a large object upload or the
+// simplicity of not needing goroutine lifecycle handling for a rare path.
 func (st *Storage) abortOrphanedMultipart(key string, uploadErr error) {
 	var failure manager.MultiUploadFailure //nolint:staticcheck // see Storage.uploader
 	if !errors.As(uploadErr, &failure) || failure.UploadID() == "" {
 		return
 	}
 
-	abortCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	abortCtx, cancel := context.WithTimeout(context.Background(), abortTimeout)
 	defer cancel()
 	_, _ = st.client.AbortMultipartUpload(abortCtx, &s3.AbortMultipartUploadInput{
 		Bucket:   aws.String(st.config.Bucket),
