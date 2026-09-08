@@ -3,7 +3,7 @@ module github.com/KARTIKrocks/objstore/s3
 go 1.27
 
 require (
-	github.com/KARTIKrocks/objstore v0.1.6
+	github.com/KARTIKrocks/objstore v0.1.7
 	github.com/aws/aws-sdk-go-v2 v1.46.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.3
@@ -26,5 +26,4 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.37.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.42.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.49.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 )

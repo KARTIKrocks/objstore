@@ -1,5 +1,5 @@
-github.com/KARTIKrocks/objstore v0.1.6 h1:NXClg9NJddYy6t/ynRkDoKh+9zSXyVFuQAdtjvDgORE=
-github.com/KARTIKrocks/objstore v0.1.6/go.mod h1:UPdSl/uaI6PRSFSwmacu6H5qXZyYmFl0iuICm/mCK3s=
+github.com/KARTIKrocks/objstore v0.1.7 h1:huaEEYdnkpAAM8QDHUsRPt5+giM9UkoZANGMQI5tntQ=
+github.com/KARTIKrocks/objstore v0.1.7/go.mod h1:8uJwFU9o5DFcktCIscV5jAmBUq8nLOoDQhslAx9Qxdw=
 github.com/aws/aws-sdk-go-v2 v1.46.0 h1:1kt7m/EKcEHt5mlyyxx9cSlMddRPIKbjb6DIQsu4HPk=
 github.com/aws/aws-sdk-go-v2 v1.46.0/go.mod h1:bttEH6JqnUL8LepvDVfdrds/fZ5bCIxzpe3abyUrhDU=
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 h1:GPRlPwz40I2B2VrBEASOA3Bi77NyeqejNLkifosX0rs=
@@ -38,5 +38,3 @@ github.com/aws/aws-sdk-go-v2/service/sts v1.49.0 h1:N7Ey8obY3uSui+cxl0OUzFlFmkxS
 github.com/aws/aws-sdk-go-v2/service/sts v1.49.0/go.mod h1:zMBwjSf4Pt8a1OHYiZ5rPD0PJRK1kQrUaxhS/Dbld8E=
 github.com/aws/smithy-go v1.28.1 h1:R/nXH00c8qcfCzQVELtRw+eLQWtzv+VAIEFJ1/xxXlQ=
 github.com/aws/smithy-go v1.28.1/go.mod h1:YE2RhdIuDbA5E5bTdciG9KrW3+TiEONeUWCqxX9i1Fc=
-github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
-github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
