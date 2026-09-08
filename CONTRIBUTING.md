@@ -15,8 +15,8 @@ Thanks for your interest in contributing!
 
 ### Prerequisites
 
-- Go 1.26+
-- golangci-lint v2.12.2
+- Go 1.27+
+- golangci-lint v2.13.0
 
 ### Project Structure
 

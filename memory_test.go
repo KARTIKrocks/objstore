@@ -607,7 +607,7 @@ func TestMemoryStorage_ConcurrentAccess(t *testing.T) {
 	errs := make(chan error, 100)
 
 	// Concurrent writes
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -620,12 +620,10 @@ func TestMemoryStorage_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Concurrent reads
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			store.List(ctx, "", WithRecursive(true))
-		}()
+		})
 	}
 
 	wg.Wait()

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-09-08
+
+### Changed
+
+- The root module and all backends (`s3`, `gcs`, `azure`) now require Go 1.27 (up from 1.26)
+- Replaced the `github.com/google/uuid` dependency with Go 1.27's new standard-library `uuid` package — `uuid.New().String()` is a drop-in match, so `GenerateFileName`/`GenerateHashedPath` are unaffected. The root module now has zero third-party dependencies of its own; `google/uuid` remains an *indirect* dependency of the `s3`/`gcs`/`azure` submodules only, pulled in by their respective cloud SDKs
+- Adopted the Go 1.27 idioms `go fix` rewrites automatically wherever they applied cleanly: `for i := range n` instead of `for i := 0; i < n; i++`, `sync.WaitGroup.Go` instead of manual `Add`/`Done` in a goroutine, `strings.SplitSeq`/`CutPrefix` instead of `Split`/`HasPrefix`+`TrimPrefix`, `maps.Copy` instead of a manual copy loop, and `errors.AsType` instead of `errors.As` with a pre-declared variable
+- Bumped `golangci-lint` to v2.13.0 and `goimports` to v0.49.0
+
 ## [0.1.6] - 2026-08-25
 
 ### Added

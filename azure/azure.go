@@ -107,9 +107,9 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 		st.client = client
 
 		// Extract AccountName from connection string
-		for _, part := range strings.Split(cfg.ConnectionString, ";") {
-			if strings.HasPrefix(part, "AccountName=") {
-				st.config.AccountName = strings.TrimPrefix(part, "AccountName=")
+		for part := range strings.SplitSeq(cfg.ConnectionString, ";") {
+			if after, ok := strings.CutPrefix(part, "AccountName="); ok {
+				st.config.AccountName = after
 				break
 			}
 		}
@@ -213,10 +213,7 @@ func (st *Storage) Get(ctx context.Context, path string, opts ...objstore.GetOpt
 
 	var downloadOpts *azblob.DownloadStreamOptions
 	if options.Offset > 0 || options.Length > 0 {
-		count := options.Length
-		if count < 0 {
-			count = 0 // CountToEnd
-		}
+		count := max(options.Length, 0) // 0 means CountToEnd
 		downloadOpts = &azblob.DownloadStreamOptions{
 			Range: blob.HTTPRange{Offset: options.Offset, Count: count},
 		}

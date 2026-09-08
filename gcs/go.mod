@@ -1,6 +1,6 @@
 module github.com/KARTIKrocks/objstore/gcs
 
-go 1.26
+go 1.27
 
 require (
 	cloud.google.com/go/storage v1.66.0
