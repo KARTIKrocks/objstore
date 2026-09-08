@@ -18,7 +18,8 @@ use:
 
 - **Root** `github.com/KARTIKrocks/objstore` — the `Storage` interface, shared
   types/options, sentinel errors, and the `LocalStorage` + `MemoryStorage`
-  backends, plus standalone helpers. Only dependency is `github.com/google/uuid`.
+  backends, plus standalone helpers. No third-party dependencies (uses Go
+  1.27's stdlib `uuid` package).
 - **`s3/`** `…/objstore/s3` — AWS S3 / S3-compatible backend (aws-sdk-go-v2).
 - **`gcs/`** `…/objstore/gcs` — Google Cloud Storage backend.
 - **`azure/`** `…/objstore/azure` — Azure Blob Storage backend.
