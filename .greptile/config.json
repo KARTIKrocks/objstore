@@ -4,7 +4,7 @@
   "triggerOnUpdates": true,
   "statusCheck": true,
   "ignorePatterns": "**/mock_*.go\n**/*_mock.go\n**/testdata/**\n**/go.sum\n**/vendor/**\n**/node_modules/**\n**/package-lock.json\nobjstore-website/dist/**\nobjstore-website/node_modules/**",
-  "instructions": "objstore is a Go library providing a unified file-storage interface (github.com/KARTIKrocks/objstore) across local filesystem, AWS S3, Google Cloud Storage, Azure Blob Storage, and an in-memory backend for testing. Every backend implements the single objstore.Storage interface so application code can switch providers without changing call sites. This is a multi-module repo: root (Storage interface, shared option types, sentinel errors, LocalStorage, MemoryStorage, helpers — depends only on the stdlib and github.com/google/uuid), plus s3/, gcs/, azure/ as separate Go modules pulling in their own SDKs. Prioritize cross-backend behavioral consistency, correct error-sentinel mapping, and context/resource handling over style. See AGENTS.md for repo conventions and .greptile/rules.md for pattern rationale and worked examples from real bugs found in this codebase.",
+  "instructions": "objstore is a Go library providing a unified file-storage interface (github.com/KARTIKrocks/objstore) across local filesystem, AWS S3, Google Cloud Storage, Azure Blob Storage, and an in-memory backend for testing. Every backend implements the single objstore.Storage interface so application code can switch providers without changing call sites. This is a multi-module repo: root (Storage interface, shared option types, sentinel errors, LocalStorage, MemoryStorage, helpers — no third-party dependencies, uses Go 1.27's stdlib uuid package), plus s3/, gcs/, azure/ as separate Go modules pulling in their own SDKs. Prioritize cross-backend behavioral consistency, correct error-sentinel mapping, and context/resource handling over style. See AGENTS.md for repo conventions and .greptile/rules.md for pattern rationale and worked examples from real bugs found in this codebase.",
   "rules": [
     {
       "id": "backend-parity",
@@ -50,7 +50,7 @@
     },
     {
       "id": "root-module-dependency-purity",
-      "rule": "The root module (files directly in the repository root) must depend only on the standard library and github.com/google/uuid. A new third-party dependency belongs in a sub-module (s3/, gcs/, azure/) if anywhere — never in root go.mod.",
+      "rule": "The root module (files directly in the repository root) must depend only on the standard library — it has no third-party dependencies (Go 1.27's stdlib uuid package replaced the former github.com/google/uuid dependency). A new third-party dependency belongs in a sub-module (s3/, gcs/, azure/) if anywhere — never in root go.mod.",
       "scope": ["*.go", "go.mod"],
       "severity": "high"
     },
