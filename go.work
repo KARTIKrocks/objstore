@@ -16,7 +16,7 @@
 //
 // To reproduce a consumer's build instead, set GOWORK=off.
 
-go 1.26
+go 1.27
 
 use (
 	.

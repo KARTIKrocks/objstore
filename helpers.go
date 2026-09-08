@@ -12,8 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // PutBytes uploads bytes to storage.

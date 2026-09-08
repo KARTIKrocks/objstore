@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -192,9 +193,7 @@ func (s *MemoryStorage) List(ctx context.Context, prefix string, opts ...ListOpt
 	// Take a snapshot under read lock
 	s.mu.RLock()
 	snapshot := make(map[string]*memoryFile, len(s.files))
-	for k, v := range s.files {
-		snapshot[k] = v
-	}
+	maps.Copy(snapshot, s.files)
 	s.mu.RUnlock()
 
 	result := &ListResult{
@@ -273,9 +272,7 @@ func (s *MemoryStorage) Copy(ctx context.Context, src, dst string) error {
 	var newMetadata map[string]string
 	if file.metadata != nil {
 		newMetadata = make(map[string]string, len(file.metadata))
-		for k, v := range file.metadata {
-			newMetadata[k] = v
-		}
+		maps.Copy(newMetadata, file.metadata)
 	}
 
 	s.files[dst] = &memoryFile{

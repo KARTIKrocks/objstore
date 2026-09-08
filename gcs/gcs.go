@@ -241,8 +241,7 @@ func (st *Storage) Get(ctx context.Context, path string, opts ...objstore.GetOpt
 // isInvalidRangeError checks if an error is GCS's response to a byte range
 // that falls outside the object's bounds.
 func isInvalidRangeError(err error) bool {
-	var apiErr *googleapi.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*googleapi.Error](err); ok {
 		return apiErr.Code == 416
 	}
 	return false

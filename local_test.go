@@ -577,7 +577,7 @@ func TestLocalStorage_ConcurrentAccess(t *testing.T) {
 	errs := make(chan error, 200)
 
 	// Concurrent writes with unique keys
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -590,7 +590,7 @@ func TestLocalStorage_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Concurrent reads
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -603,7 +603,7 @@ func TestLocalStorage_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Concurrent exists checks
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -613,7 +613,7 @@ func TestLocalStorage_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Concurrent deletes
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

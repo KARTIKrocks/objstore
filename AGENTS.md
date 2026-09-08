@@ -44,7 +44,7 @@ make all          # tidy, fmt, vet, lint, build, test across all modules
 make ci           # what CI runs: tidy, fmt-check, vet, lint, test-race
 make test         # go test ./... in each module
 make test-race    # go test -race -count=1 ./... in each module
-make lint         # golangci-lint run (installs golangci-lint v2.12.2 if missing)
+make lint         # golangci-lint run (installs golangci-lint v2.13.0 if missing)
 make fix          # fmt + golangci-lint --fix
 make coverage     # per-module coverage profiles
 make bench        # go test -bench=. -benchmem ./...
@@ -60,7 +60,7 @@ go test -run TestLocalStorage_Put ./...          # root module
 cd s3 && go test -run TestStorage_SignedURL ./... # a sub-module
 ```
 
-`make setup` installs `golangci-lint` and `goimports` if absent. Go 1.26+ is
+`make setup` installs `golangci-lint` and `goimports` if absent. Go 1.27+ is
 required.
 
 ## Architecture
