@@ -1,6 +1,7 @@
 package objstore
 
 import (
+	"net/http"
 	"testing"
 	"time"
 )
@@ -87,8 +88,8 @@ func TestApplySignedURLOptions(t *testing.T) {
 		if opts.Expires != 15*time.Minute {
 			t.Errorf("Expires = %v, want 15m", opts.Expires)
 		}
-		if opts.Method != "GET" {
-			t.Errorf("Method = %q, want %q", opts.Method, "GET")
+		if opts.Method != http.MethodGet {
+			t.Errorf("Method = %q, want %q", opts.Method, http.MethodGet)
 		}
 	})
 
@@ -104,8 +105,8 @@ func TestApplySignedURLOptions(t *testing.T) {
 		if opts.Expires != 1*time.Hour {
 			t.Errorf("Expires = %v, want 1h", opts.Expires)
 		}
-		if opts.Method != "PUT" {
-			t.Errorf("Method = %q, want %q", opts.Method, "PUT")
+		if opts.Method != http.MethodPut {
+			t.Errorf("Method = %q, want %q", opts.Method, http.MethodPut)
 		}
 		if opts.ContentType != "application/json" {
 			t.Errorf("ContentType = %q, want %q", opts.ContentType, "application/json")

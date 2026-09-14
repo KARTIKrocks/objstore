@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -482,7 +484,7 @@ func (st *Storage) SignedURL(ctx context.Context, path string, opts ...objstore.
 	blobName := st.blobName(path)
 
 	perms := sas.BlobPermissions{Read: true}
-	if options.Method == "PUT" {
+	if options.Method == http.MethodPut {
 		perms = sas.BlobPermissions{Write: true, Create: true}
 	}
 
@@ -580,7 +582,7 @@ func isNotFoundError(err error) bool {
 	}
 
 	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) && respErr.StatusCode == 404 {
+	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
 		return true
 	}
 
@@ -616,9 +618,11 @@ func fromAzureMetadata(m map[string]*string) map[string]string {
 
 // maxResultsPtr returns a *int32 for the page size, or nil when no limit is set
 // (0 or negative), so the SDK uses its default instead of requesting zero results.
+// A caller-supplied value beyond int32 range is clamped rather than truncated,
+// since a silent wraparound could turn a large page request into a negative one.
 func maxResultsPtr(maxKeys int) *int32 {
 	if maxKeys <= 0 {
 		return nil
 	}
-	return new(int32(maxKeys))
+	return new(int32(min(maxKeys, math.MaxInt32)))
 }

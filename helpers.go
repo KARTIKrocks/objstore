@@ -184,7 +184,7 @@ func SyncDir(ctx context.Context, s Storage, localPath, remotePath string) error
 		dstPath := strings.TrimSuffix(remotePath, "/") + "/" + filepath.ToSlash(relPath)
 
 		// Open local file
-		file, err := os.Open(path)
+		file, err := os.Open(path) //nolint:gosec // path comes from filepath.Walk over the caller-supplied localPath
 		if err != nil {
 			return err
 		}

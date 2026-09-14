@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -475,7 +476,7 @@ func TestLocalStorage_SignedURL_Signed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifySignedURL: %v", err)
 	}
-	if got.Method != "PUT" || got.ContentType != "image/jpeg" || got.Path != "/uploads/f.jpg" {
+	if got.Method != http.MethodPut || got.ContentType != "image/jpeg" || got.Path != "/uploads/f.jpg" {
 		t.Fatalf("verified = %+v", got)
 	}
 }

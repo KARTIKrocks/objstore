@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,14 +128,14 @@ func NewLocalStorage(config LocalConfig) (*LocalStorage, error) {
 	// Ensure base path is absolute
 	absPath, err := filepath.Abs(config.BasePath)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidConfig, err)
 	}
 	config.BasePath = absPath
 
 	// Create base directory if it doesn't exist
 	if config.CreateDirs {
 		if err := os.MkdirAll(config.BasePath, config.DirPermissions); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrPermission, err)
+			return nil, fmt.Errorf("%w: %w", ErrPermission, err)
 		}
 	}
 
@@ -170,14 +171,14 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 	dir := filepath.Dir(fullPath)
 	if s.config.CreateDirs {
 		if err := os.MkdirAll(dir, s.config.DirPermissions); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrPermission, err)
+			return nil, fmt.Errorf("%w: %w", ErrPermission, err)
 		}
 	}
 
 	// Create file
-	file, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, s.config.FilePermissions)
+	file, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, s.config.FilePermissions) //nolint:gosec // fullPath validates the key stays within BasePath
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrPermission, err)
+		return nil, fmt.Errorf("%w: %w", ErrPermission, err)
 	}
 
 	// Copy content with context cancellation support
@@ -226,12 +227,12 @@ func (s *LocalStorage) Get(ctx context.Context, path string, opts ...GetOption) 
 		return nil, err
 	}
 
-	file, err := os.Open(fullPath)
+	file, err := os.Open(fullPath) //nolint:gosec // fullPath validates the key stays within BasePath
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("%w: %v", ErrPermission, err)
+		return nil, fmt.Errorf("%w: %w", ErrPermission, err)
 	}
 
 	if options.Offset == 0 && options.Length <= 0 {
@@ -274,7 +275,7 @@ func (s *LocalStorage) Delete(ctx context.Context, path string) error {
 		if os.IsNotExist(err) {
 			return ErrNotFound
 		}
-		return fmt.Errorf("%w: %v", ErrPermission, err)
+		return fmt.Errorf("%w: %w", ErrPermission, err)
 	}
 
 	return nil
@@ -474,7 +475,7 @@ func (s *LocalStorage) Copy(ctx context.Context, src, dst string) error {
 	}
 
 	// Open source
-	srcFile, err := os.Open(srcPath)
+	srcFile, err := os.Open(srcPath) //nolint:gosec // fullPath validates both src and dst stay within BasePath
 	if err != nil {
 		if os.IsNotExist(err) {
 			return ErrNotFound
@@ -486,14 +487,14 @@ func (s *LocalStorage) Copy(ctx context.Context, src, dst string) error {
 	// Create destination directory
 	if s.config.CreateDirs {
 		if err := os.MkdirAll(filepath.Dir(dstPath), s.config.DirPermissions); err != nil {
-			return fmt.Errorf("%w: %v", ErrPermission, err)
+			return fmt.Errorf("%w: %w", ErrPermission, err)
 		}
 	}
 
 	// Create destination
-	dstFile, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, s.config.FilePermissions)
+	dstFile, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, s.config.FilePermissions) //nolint:gosec // fullPath validates both src and dst stay within BasePath
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrPermission, err)
+		return fmt.Errorf("%w: %w", ErrPermission, err)
 	}
 
 	// Copy with context cancellation support
@@ -524,7 +525,7 @@ func (s *LocalStorage) Move(ctx context.Context, src, dst string) error {
 	// Create destination directory
 	if s.config.CreateDirs {
 		if err := os.MkdirAll(filepath.Dir(dstPath), s.config.DirPermissions); err != nil {
-			return fmt.Errorf("%w: %v", ErrPermission, err)
+			return fmt.Errorf("%w: %w", ErrPermission, err)
 		}
 	}
 
@@ -561,7 +562,7 @@ func (s *LocalStorage) SignedURL(ctx context.Context, path string, opts ...Signe
 	}
 	o := ApplySignedURLOptions(opts)
 	if s.config.SigningSecret == "" {
-		if o.Method != "" && o.Method != "GET" {
+		if o.Method != "" && o.Method != http.MethodGet {
 			return "", fmt.Errorf("%w: signing secret required for %s signed URLs", ErrNotImplemented, o.Method)
 		}
 		return s.URL(ctx, path)
@@ -602,7 +603,7 @@ func (s *LocalStorage) DeleteDir(ctx context.Context, path string) error {
 		if os.IsNotExist(err) {
 			return ErrNotFound
 		}
-		return fmt.Errorf("%w: %v", ErrPermission, err)
+		return fmt.Errorf("%w: %w", ErrPermission, err)
 	}
 
 	return nil
