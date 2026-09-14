@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -331,7 +332,7 @@ func (s *MemoryStorage) SignedURL(ctx context.Context, path string, opts ...Sign
 	}
 	o := ApplySignedURLOptions(opts)
 	if s.signingSecret == "" {
-		if o.Method != "" && o.Method != "GET" {
+		if o.Method != "" && o.Method != http.MethodGet {
 			return "", fmt.Errorf("%w: signing secret required for %s signed URLs", ErrNotImplemented, o.Method)
 		}
 		return s.URL(ctx, path)

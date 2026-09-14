@@ -337,7 +337,7 @@ func (st *Storage) List(ctx context.Context, prefix string, opts ...objstore.Lis
 		}
 
 		attrs, err := it.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {

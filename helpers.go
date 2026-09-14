@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -184,7 +185,7 @@ func SyncDir(ctx context.Context, s Storage, localPath, remotePath string) error
 		dstPath := strings.TrimSuffix(remotePath, "/") + "/" + filepath.ToSlash(relPath)
 
 		// Open local file
-		file, err := os.Open(path)
+		file, err := os.Open(path) //nolint:gosec // path comes from filepath.Walk over the caller-supplied localPath
 		if err != nil {
 			return err
 		}
@@ -312,4 +313,17 @@ func FormatSize(size int64) string {
 	}
 
 	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
+}
+
+// ClampToInt32Ptr returns a *int32 for n, or nil when n is 0 or negative, so
+// SDKs that treat a nil page-size pointer as "use the default" don't get
+// asked for zero results. A value beyond int32 range is clamped rather than
+// truncated, since a silent wraparound could turn a large page request into a
+// negative one. Intended for backend implementations translating
+// ListOptions.MaxKeys into a provider SDK's page-size field.
+func ClampToInt32Ptr(n int) *int32 {
+	if n <= 0 {
+		return nil
+	}
+	return new(int32(min(n, math.MaxInt32)))
 }

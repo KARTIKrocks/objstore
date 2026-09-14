@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -303,7 +304,7 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 		// upload's parts sitting on S3 uncommitted (the object was never
 		// created), so this needs the same cleanup as any other multipart
 		// failure — run it before mapping the error, not instead of it.
-		st.abortOrphanedMultipart(key, err)
+		st.abortOrphanedMultipart(key, err) //nolint:contextcheck // deliberately retries with a fresh context, see doc comment above
 
 		var apiErr smithy.APIError
 		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "PreconditionFailed" {
@@ -344,7 +345,7 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 // less than either the cost being borne by a large object upload or the
 // simplicity of not needing goroutine lifecycle handling for a rare path.
 func (st *Storage) abortOrphanedMultipart(key string, uploadErr error) {
-	var failure manager.MultiUploadFailure //nolint:staticcheck // see Storage.uploader
+	var failure manager.MultiUploadFailure
 	if !errors.As(uploadErr, &failure) || failure.UploadID() == "" {
 		return
 	}
@@ -492,7 +493,7 @@ func (st *Storage) List(ctx context.Context, prefix string, opts ...objstore.Lis
 	input := &s3.ListObjectsV2Input{
 		Bucket:  aws.String(st.config.Bucket),
 		Prefix:  aws.String(st.key(prefix)),
-		MaxKeys: aws.Int32(int32(options.MaxKeys)),
+		MaxKeys: objstore.ClampToInt32Ptr(options.MaxKeys),
 	}
 
 	if !options.Recursive && options.Delimiter != "" {
@@ -615,7 +616,7 @@ func (st *Storage) SignedURL(ctx context.Context, path string, opts ...objstore.
 
 	key := st.key(path)
 
-	if options.Method == "PUT" {
+	if options.Method == http.MethodPut {
 		input := &s3.PutObjectInput{
 			Bucket: aws.String(st.config.Bucket),
 			Key:    aws.String(key),

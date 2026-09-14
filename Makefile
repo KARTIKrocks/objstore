@@ -1,7 +1,8 @@
-.PHONY: all setup test test-race coverage lint lint-fix fix fmt fmt-check vet tidy build bench clean ci
+.PHONY: all setup test test-race coverage lint lint-fix fix fmt fmt-check vet tidy tidy-check build bench clean ci vuln print-golangci-lint-version print-govulncheck-version
 
 GOLANGCI_LINT_VERSION := v2.13.0
 GOIMPORTS_VERSION := v0.49.0
+GOVULNCHECK_VERSION := v1.7.0
 
 MODULES = . ./s3 ./gcs ./azure
 SUB_MODULES = ./s3 ./gcs ./azure
@@ -18,9 +19,13 @@ setup:
 		echo "Installing goimports $(GOIMPORTS_VERSION)..."; \
 		go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION); \
 	}
+	@command -v govulncheck >/dev/null 2>&1 || { \
+		echo "Installing govulncheck $(GOVULNCHECK_VERSION)..."; \
+		go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION); \
+	}
 
 ## Run all checks (CI)
-ci: tidy fmt-check vet lint test-race
+ci: tidy-check fmt-check vet lint test-race vuln
 
 ## Build all modules
 build:
@@ -92,6 +97,44 @@ tidy:
 		echo "==> tidy $$mod"; \
 		(cd $$mod && go mod tidy); \
 	done
+
+## Fail if any go.mod/go.sum is not tidy, without leaving the change behind.
+## Suitable for CI, where a stale go.sum should block the merge.
+tidy-check:
+	@status=$$(git status --porcelain -- $(addsuffix /go.mod,$(MODULES)) $(addsuffix /go.sum,$(MODULES))); \
+	if [ -n "$$status" ]; then \
+		echo "go.mod/go.sum already modified; commit or stash before running tidy-check"; \
+		exit 1; \
+	fi
+	@$(MAKE) --no-print-directory tidy
+	@if ! git diff --quiet -- '*go.mod' '*go.sum'; then \
+		echo "go.mod/go.sum are not tidy — run 'make tidy' and commit:"; \
+		git diff --stat -- '*go.mod' '*go.sum'; \
+		git checkout -- '*go.mod' '*go.sum'; \
+		exit 1; \
+	fi
+	@echo "all modules tidy"
+
+## Scan every module for known vulnerabilities, filtered to advisories the code
+## actually reaches. Needs network access — the advisory database is fetched on
+## every run.
+vuln: setup
+	@for mod in $(MODULES); do \
+		echo "==> vuln $$mod"; \
+		(cd $$mod && govulncheck ./...) || exit 1; \
+	done
+
+## Print the pinned linter version. CI resolves golangci-lint-action's version
+## input from this rather than hardcoding a second copy of the number, so the
+## workflow and this file cannot drift apart.
+print-golangci-lint-version:
+	@echo $(GOLANGCI_LINT_VERSION)
+
+## Print the pinned scanner version. CI installs govulncheck with this rather
+## than hardcoding a second copy of the number, so the workflow and this file
+## cannot drift apart.
+print-govulncheck-version:
+	@echo $(GOVULNCHECK_VERSION)
 
 ## Run benchmarks
 bench:

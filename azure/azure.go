@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -307,7 +308,7 @@ func (st *Storage) List(ctx context.Context, prefix string, opts ...objstore.Lis
 	listPrefix := st.blobName(prefix)
 	listOpts := &azblob.ListBlobsFlatOptions{
 		Prefix:     &listPrefix,
-		MaxResults: maxResultsPtr(options.MaxKeys),
+		MaxResults: objstore.ClampToInt32Ptr(options.MaxKeys),
 	}
 
 	if options.Token != "" {
@@ -363,7 +364,7 @@ func (st *Storage) listHierarchy(ctx context.Context, prefix string, options *ob
 	listPrefix := st.blobName(prefix)
 	listOpts := &container.ListBlobsHierarchyOptions{
 		Prefix:     &listPrefix,
-		MaxResults: maxResultsPtr(options.MaxKeys),
+		MaxResults: objstore.ClampToInt32Ptr(options.MaxKeys),
 	}
 
 	if options.Token != "" {
@@ -482,7 +483,7 @@ func (st *Storage) SignedURL(ctx context.Context, path string, opts ...objstore.
 	blobName := st.blobName(path)
 
 	perms := sas.BlobPermissions{Read: true}
-	if options.Method == "PUT" {
+	if options.Method == http.MethodPut {
 		perms = sas.BlobPermissions{Write: true, Create: true}
 	}
 
@@ -580,7 +581,7 @@ func isNotFoundError(err error) bool {
 	}
 
 	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) && respErr.StatusCode == 404 {
+	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
 		return true
 	}
 
@@ -612,13 +613,4 @@ func fromAzureMetadata(m map[string]*string) map[string]string {
 		}
 	}
 	return result
-}
-
-// maxResultsPtr returns a *int32 for the page size, or nil when no limit is set
-// (0 or negative), so the SDK uses its default instead of requesting zero results.
-func maxResultsPtr(maxKeys int) *int32 {
-	if maxKeys <= 0 {
-		return nil
-	}
-	return new(int32(maxKeys))
 }

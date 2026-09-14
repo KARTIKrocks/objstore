@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -512,7 +513,7 @@ func TestMemoryStorage_SignedURL_Signed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifySignedURL: %v", err)
 	}
-	if got.Method != "PUT" || got.ContentType != "image/png" || got.Path != "/uploads/f.png" {
+	if got.Method != http.MethodPut || got.ContentType != "image/png" || got.Path != "/uploads/f.png" {
 		t.Fatalf("verified = %+v", got)
 	}
 }

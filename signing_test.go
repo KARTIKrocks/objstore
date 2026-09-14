@@ -2,6 +2,7 @@ package objstore
 
 import (
 	"errors"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -21,7 +22,7 @@ func TestVerifySignedURL_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifySignedURL: %v", err)
 	}
-	if got.Method != "PUT" {
+	if got.Method != http.MethodPut {
 		t.Errorf("method = %q, want PUT", got.Method)
 	}
 	if got.ContentType != "application/pdf" {

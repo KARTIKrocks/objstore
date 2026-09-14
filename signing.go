@@ -37,7 +37,7 @@ type SignedRequest struct {
 func buildSignedURL(baseURL, objectPath, secret, method, contentType string, expires time.Time) (string, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
-		return "", fmt.Errorf("%w: invalid base URL: %v", ErrInvalidConfig, err)
+		return "", fmt.Errorf("%w: invalid base URL: %w", ErrInvalidConfig, err)
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + strings.TrimPrefix(objectPath, "/")
 
@@ -60,7 +60,7 @@ func buildSignedURL(baseURL, objectPath, secret, method, contentType string, exp
 func VerifySignedURL(rawURL, secret string) (*SignedRequest, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrSignatureInvalid, err)
+		return nil, fmt.Errorf("%w: %w", ErrSignatureInvalid, err)
 	}
 	q := u.Query()
 
