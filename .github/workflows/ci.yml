@@ -18,6 +18,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         go-version: ["1.27"]
@@ -33,6 +34,7 @@ jobs:
 
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         module: [".", "./s3", "./gcs", "./azure"]
@@ -53,8 +55,18 @@ jobs:
           flags: ${{ matrix.module }}
           fail_ci_if_error: false
 
+  # `--timeout=5m` below only bounds golangci-lint's own internal watchdog; it
+  # has been observed to still hang tens of minutes past that (seen against
+  # ./azure: "0 issues." printed, then "Timeout exceeded", then the process
+  # didn't actually exit for another ~49m) — almost certainly a stuck
+  # cache/analysis-data write on the runner's disk after linting itself had
+  # already finished, not a real lint problem (reproduces instantly, 0
+  # issues, locally with a warm cache). The job-level timeout is the actual
+  # backstop: it force-kills the runner outright instead of waiting on
+  # golangci-lint's own timeout handling.
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         module: [".", "./s3", "./gcs", "./azure"]
@@ -105,6 +117,7 @@ jobs:
   vuln:
     name: govulncheck (${{ matrix.module }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         module: [".", "./s3", "./gcs", "./azure"]
@@ -128,6 +141,7 @@ jobs:
 
   bench:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v7
