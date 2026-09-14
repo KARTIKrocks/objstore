@@ -60,7 +60,7 @@ linters:
   exclusions:
     paths:
       - node_modules
-      - objstore-website/
+      - website/
     rules:
       - linters:
           - errcheck
