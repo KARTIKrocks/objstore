@@ -486,18 +486,6 @@ func (st *Storage) Stat(ctx context.Context, path string) (*objstore.FileInfo, e
 	}, nil
 }
 
-// maxKeysPtr returns a *int32 for the page size, or nil when no limit is set
-// (0 or negative), so the SDK uses its default instead of requesting zero
-// results. A caller-supplied value beyond int32 range is clamped rather than
-// truncated, since a silent wraparound could turn a large page request into a
-// negative one.
-func maxKeysPtr(maxKeys int) *int32 {
-	if maxKeys <= 0 {
-		return nil
-	}
-	return new(int32(min(maxKeys, math.MaxInt32)))
-}
-
 // List returns files matching the prefix in S3.
 func (st *Storage) List(ctx context.Context, prefix string, opts ...objstore.ListOption) (*objstore.ListResult, error) {
 	options := objstore.ApplyListOptions(opts)
@@ -505,7 +493,7 @@ func (st *Storage) List(ctx context.Context, prefix string, opts ...objstore.Lis
 	input := &s3.ListObjectsV2Input{
 		Bucket:  aws.String(st.config.Bucket),
 		Prefix:  aws.String(st.key(prefix)),
-		MaxKeys: maxKeysPtr(options.MaxKeys),
+		MaxKeys: objstore.ClampToInt32Ptr(options.MaxKeys),
 	}
 
 	if !options.Recursive && options.Delimiter != "" {

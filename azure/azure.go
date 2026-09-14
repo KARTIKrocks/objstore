@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -309,7 +308,7 @@ func (st *Storage) List(ctx context.Context, prefix string, opts ...objstore.Lis
 	listPrefix := st.blobName(prefix)
 	listOpts := &azblob.ListBlobsFlatOptions{
 		Prefix:     &listPrefix,
-		MaxResults: maxResultsPtr(options.MaxKeys),
+		MaxResults: objstore.ClampToInt32Ptr(options.MaxKeys),
 	}
 
 	if options.Token != "" {
@@ -365,7 +364,7 @@ func (st *Storage) listHierarchy(ctx context.Context, prefix string, options *ob
 	listPrefix := st.blobName(prefix)
 	listOpts := &container.ListBlobsHierarchyOptions{
 		Prefix:     &listPrefix,
-		MaxResults: maxResultsPtr(options.MaxKeys),
+		MaxResults: objstore.ClampToInt32Ptr(options.MaxKeys),
 	}
 
 	if options.Token != "" {
@@ -614,15 +613,4 @@ func fromAzureMetadata(m map[string]*string) map[string]string {
 		}
 	}
 	return result
-}
-
-// maxResultsPtr returns a *int32 for the page size, or nil when no limit is set
-// (0 or negative), so the SDK uses its default instead of requesting zero results.
-// A caller-supplied value beyond int32 range is clamped rather than truncated,
-// since a silent wraparound could turn a large page request into a negative one.
-func maxResultsPtr(maxKeys int) *int32 {
-	if maxKeys <= 0 {
-		return nil
-	}
-	return new(int32(min(maxKeys, math.MaxInt32)))
 }
