@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI coding agents when working with code in this repository.
 
 ## Overview
 
@@ -84,7 +84,7 @@ across all backends:
   adding or modifying a backend.
 - **`FileInfo` / `ListResult`** are the common return shapes; backends translate
   their native metadata into these.
-- **`BatchDeleter`** is an _optional_ interface (`DeleteMultiple`). Helpers
+- **`BatchDeleter`** is an *optional* interface (`DeleteMultiple`). Helpers
   type-assert for it and fall back to one-by-one deletion when a backend doesn't
   implement it.
 
@@ -125,29 +125,29 @@ cancellation (see `ctxReader` in `local.go` for the local-fs approach).
 
 ## Documentation website
 
-The project's docs site lives on a **separate `website` branch** — not on
-`main`. On `main` the `objstore-website/` directory is **gitignored** (it's only
-a local working copy); the canonical source is `website:objstore-website/`, and
-the built output deploys to the `gh-pages` branch. When asked to work on the
-docs, `git checkout website` first.
+The project's docs site lives in **`website/` on `main`** — a Docusaurus
+project, not a separate branch. (An earlier iteration used a React/Vite site
+on a standalone `website` branch deploying to `gh-pages`; that approach is
+superseded by this one. See `website/README.md` for local dev and
+`website/VERSIONING.md` for the documentation-versioning policy.)
 
 It is a standalone frontend project with a completely different toolchain from
-the Go library (npm/Vite, not `make`):
+the Go library (npm/Docusaurus, not `make`):
 
-- **Stack:** React 19 + TypeScript, Vite, Tailwind CSS 4, and Shiki for code
-  highlighting.
-- **Layout (`objstore-website/`):** `src/components/` (`Navbar`, `Sidebar`,
-  `Hero`, `CodeBlock`, `ThemeToggle`, `ThemeProvider`, `ModuleSection`) and
-  `src/content/` — one page per backend/topic: `getting-started`, `local`,
-  `memory`, `s3`, `gcs`, `azure`, `operations`, `helpers`, `errors`,
-  `switching`, and `acl`. When library behavior changes, the matching
-  `src/content/*.tsx` page is what needs updating.
-- **Commands (run inside `objstore-website/`):** `npm run dev` (Vite dev
-  server), `npm run build` (`tsc -b && vite build`), `npm run lint` (eslint),
-  `npm run deploy` (`npm run build && gh-pages -d dist` → publishes to
-  `gh-pages`).
-- **Base path:** `vite.config.ts` sets `base: '/objstore/'` for GitHub Pages;
-  keep it in sync with the repo name if it ever changes.
+- **Stack:** Docusaurus 3 (React + TypeScript), MDX, Biome for lint/format.
+- **Layout (`website/`):** `docs/` — one Markdown page per topic
+  (`getting-started`, `backends/{local,s3,gcs,azure,memory}`,
+  `core-operations`, `signed-urls`, `helpers`, `switching-backends`,
+  `errors`) — plus `src/pages/index.tsx` for the landing page. When library
+  behavior changes, the matching `docs/*.md` page is what needs updating.
+- **Commands (run inside `website/`):** `npm start` (dev server),
+  `npm run build` (production build), `npm run check` (lint + typecheck +
+  build — what CI runs on PRs).
+- **Deployment:** pushing to `main` builds and deploys via
+  `.github/workflows/docs.yml` (GitHub Actions → GitHub Pages). Nothing to
+  run by hand; do not commit built output to a branch.
+- **Base path:** `docusaurus.config.ts` sets `baseUrl: '/objstore/'` for
+  GitHub Pages; keep it in sync with the repo name if it ever changes.
 
 ## Conventions
 

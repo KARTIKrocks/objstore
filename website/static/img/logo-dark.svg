@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="objstore">
+  <title>objstore</title>
+  <path d="M14 17 50 17 41 54 23 54 Z" fill="#6366f1"/>
+  <ellipse cx="32" cy="17" rx="18" ry="5.5" fill="#a5b4fc"/>
+  <path d="M32 24 32 44 M32 24 25 31 M32 24 39 31" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

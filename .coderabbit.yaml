@@ -5,7 +5,7 @@
 language: en-US
 early_access: false
 tone_instructions: >-
-  Reviewing objstore, a public Go object-storage library (the Bucket interface,
+  Reviewing objstore, a public Go object-storage library (the Storage interface,
   with local/memory/S3/GCS/Azure backends). Treat it as stable public API:
   prioritize correctness, backward compatibility, and idiomatic Go. Be precise,
   direct, and concise.
@@ -38,7 +38,8 @@ reviews:
   # Skip generated, vendored, build, and dependency artifacts so reviews stay signal-rich.
   path_filters:
     - "!**/node_modules/**"
-    - "!objstore-website/dist/**"
+    - "!website/build/**"
+    - "!website/.docusaurus/**"
     - "!**/*.min.js"
     - "!**/*.min.css"
     - "!**/go.sum"
@@ -54,7 +55,7 @@ reviews:
         Review as idiomatic, production Go for a public library.
         - Errors: wrap with %w to preserve chains; use errors.Is/As at call sites;
           never discard errors silently (golangci errcheck is enforced).
-        - Sentinel errors (e.g. ErrNotExist) must stay comparable and behave
+        - Sentinel errors (e.g. ErrNotFound) must stay comparable and behave
           consistently across every backend implementation.
         - Context: every I/O-bound method must accept and honor context.Context
           for cancellation; never store a Context in a struct.
@@ -62,9 +63,9 @@ reviews:
           Close() and recommend defer or closing on every return path.
         - Concurrency: in-memory/local backends must be goroutine-safe; check for
           data races on shared maps and slices (CI runs `go test -race`).
-        - API stability: exported identifiers, signatures, and the Bucket interface
+        - API stability: exported identifiers, signatures, and the Storage interface
           are public surface — flag breaking changes and require they be called out.
-        - Implementations of the Bucket interface must satisfy the same documented
+        - Implementations of the Storage interface must satisfy the same documented
           semantics (e.g. Get on a missing key returns the sentinel not-found error).
         - Prefer streaming over buffering whole objects in memory; flag unbounded
           io.ReadAll on user-supplied object bodies.
@@ -124,10 +125,8 @@ reviews:
       enabled: true
     shellcheck:
       enabled: true
-    # Docs website tooling (objstore-website is a Node project).
+    # Docs website tooling (website/ is a Node/Docusaurus project).
     biome:
-      enabled: true
-    eslint:
       enabled: true
 
 chat:
@@ -145,4 +144,4 @@ knowledge_base:
     enabled: true
     filePatterns:
       - "**/CONTRIBUTING.md"
-      - "**/CLAUDE.md"
+      - "**/AGENTS.md"

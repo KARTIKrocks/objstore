@@ -1,14 +1,68 @@
-# objstore
+<!-- The centred logo block opens the file, so there is no h1 on line 1. -->
+<!-- markdownlint-disable-next-line MD041 -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="website/static/img/logo-dark.svg">
+    <img src="website/static/img/logo.svg" alt="objstore" width="104" height="104">
+  </picture>
+</p>
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/KARTIKrocks/objstore.svg)](https://pkg.go.dev/github.com/KARTIKrocks/objstore)
-[![Go Report Card](https://goreportcard.com/badge/github.com/KARTIKrocks/objstore)](https://goreportcard.com/report/github.com/KARTIKrocks/objstore)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/KARTIKrocks/objstore)](go.mod)
-[![CI](https://github.com/KARTIKrocks/objstore/actions/workflows/ci.yml/badge.svg)](https://github.com/KARTIKrocks/objstore/actions/workflows/ci.yml)
-[![GitHub tag](https://img.shields.io/github/v/tag/KARTIKrocks/objstore)](https://github.com/KARTIKrocks/objstore/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![codecov](https://codecov.io/gh/KARTIKrocks/objstore/branch/main/graph/badge.svg)](https://codecov.io/gh/KARTIKrocks/objstore)
+<h1 align="center">objstore</h1>
 
-Unified file storage interface for Go, supporting local filesystem, AWS S3, Google Cloud Storage, Azure Blob Storage, and in-memory storage for testing.
+<p align="center">
+  Unified file storage interface for Go, supporting local filesystem, AWS S3,
+  Google Cloud Storage, Azure Blob Storage, and in-memory storage for testing.
+</p>
+
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/KARTIKrocks/objstore"><img src="https://pkg.go.dev/badge/github.com/KARTIKrocks/objstore.svg" alt="Go Reference"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/KARTIKrocks/objstore" alt="Go version"></a>
+  <a href="https://github.com/KARTIKrocks/objstore/actions/workflows/ci.yml"><img src="https://github.com/KARTIKrocks/objstore/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/KARTIKrocks/objstore/releases"><img src="https://img.shields.io/github/v/tag/KARTIKrocks/objstore" alt="GitHub tag"></a>
+  <a href="https://codecov.io/gh/KARTIKrocks/objstore"><img src="https://codecov.io/gh/KARTIKrocks/objstore/branch/main/graph/badge.svg" alt="codecov"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  <b><a href="https://kartikrocks.github.io/objstore/">Documentation</a></b> ·
+  <b><a href="https://pkg.go.dev/github.com/KARTIKrocks/objstore">API Reference</a></b> ·
+  <b><a href="CHANGELOG.md">Changelog</a></b>
+</p>
+
+## Why objstore?
+
+Every cloud storage SDK has its own shape — different option builders,
+different error types, different pagination, different ways to sign a URL.
+objstore normalizes all of that behind one interface:
+
+| Capability                                     | objstore | Raw SDK per backend |
+| ---------------------------------------------- | -------- | ------------------- |
+| One interface across local/S3/GCS/Azure/memory | ✓        | You build it        |
+| Sentinel errors matched with `errors.Is`       | ✓        | You build it        |
+| Streaming multipart upload (S3)                | ✓        | You build it        |
+| Ranged (partial) downloads on every backend    | ✓        | You build it        |
+| Signed URLs, including for local/memory        | ✓        | You build it        |
+| Path generation, file-type detection, sync     | ✓        | You build it        |
+| Zero-dependency in-memory backend for tests    | ✓        | You build it        |
+
+objstore isn't a replacement for the cloud SDKs — it's built on top of them
+(`aws-sdk-go-v2`, `cloud.google.com/go/storage`, `azure-sdk-for-go`). It's the
+abstraction layer most projects end up writing themselves the first time they
+need to support more than one storage backend, packaged once and kept
+consistent across all five.
+
+## Features
+
+- **Unified Interface**: `Put`, `Get`, `Delete`, `Exists`, `Stat`, `List`, `Copy`, `Move`, `URL`, `SignedURL` — identical on every backend
+- **Five Backends**: Local filesystem, AWS S3, Google Cloud Storage, Azure Blob Storage, and in-memory
+- **S3-Compatible Services**: MinIO, DigitalOcean Spaces, Cloudflare R2, Backblaze B2, Wasabi via endpoint + path-style config
+- **Streaming Multipart Upload**: bodies past 5MiB split into bounded-memory parts through S3's multipart uploader automatically
+- **Signed URLs Everywhere**: cloud backends presign natively; local and memory produce verifiable HMAC-signed URLs
+- **Ranged Downloads**: resume downloads or seek into large files with byte-range requests
+- **Built-in Helpers**: unique/date/hash-distributed path generation, file-type detection, size formatting, directory sync
+- **Sentinel Errors**: a small, consistent error set matched with `errors.Is` across every backend
+- **Zero-Dependency Root Module**: the core package has no third-party dependencies; cloud SDKs live in their own submodules
+- **Zero-Dependency Testing**: the in-memory backend needs no cloud credentials or network
 
 ## Installation
 
@@ -37,6 +91,30 @@ defer reader.Close()
 // Delete file
 store.Delete(ctx, "docs/document.pdf")
 ```
+
+## Documentation
+
+Full guides live at **[kartikrocks.github.io/objstore](https://kartikrocks.github.io/objstore/)**:
+
+| Guide                                                                                | Covers                                                   |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| [Getting Started](https://kartikrocks.github.io/objstore/docs/getting-started)       | Install and run your first upload/download               |
+| [Local Filesystem](https://kartikrocks.github.io/objstore/docs/backends/local)       | Disk-backed storage with a signable base URL             |
+| [AWS S3](https://kartikrocks.github.io/objstore/docs/backends/s3)                    | Multipart uploads, S3-compatible endpoints, batch delete |
+| [Google Cloud Storage](https://kartikrocks.github.io/objstore/docs/backends/gcs)     | Service account, JSON, and default credentials           |
+| [Azure Blob Storage](https://kartikrocks.github.io/objstore/docs/backends/azure)     | Account key, connection string, managed identity         |
+| [In-Memory](https://kartikrocks.github.io/objstore/docs/backends/memory)             | Zero-dependency backend for tests                        |
+| [Core Operations](https://kartikrocks.github.io/objstore/docs/core-operations)       | Upload, download, list, copy/move, URLs, ACLs            |
+| [Signed URLs](https://kartikrocks.github.io/objstore/docs/signed-urls)               | Cloud presigning vs. HMAC-signed local/memory URLs       |
+| [Helper Functions](https://kartikrocks.github.io/objstore/docs/helpers)              | Path generation, file-type detection, directory sync     |
+| [Switching Backends](https://kartikrocks.github.io/objstore/docs/switching-backends) | Writing storage code that's backend-agnostic             |
+| [Error Handling](https://kartikrocks.github.io/objstore/docs/errors)                 | Sentinel errors and `errors.Is` matching                 |
+
+Exact type signatures are generated from source on
+[pkg.go.dev](https://pkg.go.dev/github.com/KARTIKrocks/objstore).
+
+Runnable programs are in [`examples/`](examples/) — basic usage, helpers, and
+switching backends.
 
 ## Storage Backends
 
@@ -509,3 +587,11 @@ Common ACL values for S3 and GCS:
 | `bucket-owner-full-control` | Bucket owner has full control |
 
 <!-- S3-compatible services are already covered by your S3 backend (MinIO, DigitalOcean Spaces, Cloudflare R2, Backblaze B2, Wasabi) via the Endpoint + PathStyle config. So you get ~6 providers for free -->
+
+## License
+
+[MIT](LICENSE)
+
+## Contributing
+
+Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.

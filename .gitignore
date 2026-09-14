@@ -30,9 +30,6 @@ go.work.sum
 *.swo
 *~
 
-# FE
-objstore-website
-
 # OS
 .DS_Store
 Thumbs.db
