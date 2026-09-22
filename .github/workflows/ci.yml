@@ -69,9 +69,18 @@ jobs:
   # something (an incompatible API change) fails to compile, which `test`/
   # `coverage` below already catch — those keep running for Dependabot PRs,
   # only `lint` is skipped.
+  #
+  # This still leaves one rare cold-cache path: a human PR that bumps a
+  # dependency itself, or the very first run against a go.sum a Dependabot
+  # PR just merged. 45m/40m is one more, deliberately generous bump for that
+  # — since Dependabot no longer hits this, it should be rare enough to
+  # afford it. If a run ever needs this long again, don't raise it a fourth
+  # time: local reproduction has never taken more than ~5m, so a real 45m+
+  # run is evidence of an actual hang, not just a slow runner, and is worth
+  # investigating properly rather than absorbing with a bigger number.
   lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     if: github.actor != 'dependabot[bot]'
     strategy:
       matrix:
@@ -84,7 +93,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.13.0
-          args: --timeout=25m
+          args: --timeout=40m
           working-directory: ${{ matrix.module }}
 
   # Structural linting for every Markdown file in the repo. This lives here
