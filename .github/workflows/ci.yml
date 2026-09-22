@@ -61,13 +61,14 @@ jobs:
   # that bumps a dependency (every Dependabot PR, by definition) invalidates
   # it and forces a full cold run. Measured locally with the golangci-lint
   # cache cleared: ~4m for ./azure alone (0 issues) vs. under a second warm.
-  # GitHub-hosted runners are slower than that, hence the wide margin below —
-  # 5m previously wasn't enough and every dependency-bump PR was failing on
-  # it. Confirmed NOT an actual hang: it always finishes with 0 issues given
-  # enough time.
+  # 15m/20m (the previous margin) still wasn't enough — GitHub-hosted
+  # standard runners have only 2 vCPUs, and this analysis parallelizes across
+  # cores locally, so the wall-clock gap is larger than the raw CPU-time
+  # difference suggests. Confirmed NOT an actual hang: it always finishes
+  # with 0 issues given enough time.
   lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       matrix:
         module: [".", "./s3", "./gcs", "./azure"]
@@ -79,7 +80,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.13.0
-          args: --timeout=15m
+          args: --timeout=25m
           working-directory: ${{ matrix.module }}
 
   # Structural linting for every Markdown file in the repo. This lives here
