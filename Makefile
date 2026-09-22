@@ -61,7 +61,7 @@ coverage:
 lint: setup
 	@for mod in $(MODULES); do \
 		echo "==> lint $$mod"; \
-		(cd $$mod && golangci-lint run --timeout=5m ./...); \
+		(cd $$mod && golangci-lint run --timeout=15m ./...); \
 	done
 
 ## Run golangci-lint with auto-fix
