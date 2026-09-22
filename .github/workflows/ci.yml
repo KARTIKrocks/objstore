@@ -61,27 +61,23 @@ jobs:
   # this than the machine it was measured on (~4m locally), and there is no
   # timeout worth being generous enough to reliably absorb that gap.
   #
-  # The actual fix is to stop paying this cost somewhere it buys nothing:
-  # Dependabot PRs only ever touch go.mod/go.sum, never .go source. Lint is
-  # static analysis of source — with no source change, its result cannot
-  # differ from the last time this same code was linted, no matter which
-  # dependency version is now in go.sum. A bump that actually breaks
-  # something (an incompatible API change) fails to compile, which `test`/
-  # `coverage` below already catch — those keep running for Dependabot PRs,
-  # only `lint` is skipped.
-  #
-  # This still leaves one rare cold-cache path: a human PR that bumps a
-  # dependency itself, or the very first run against a go.sum a Dependabot
-  # PR just merged. 45m/40m is one more, deliberately generous bump for that
-  # — since Dependabot no longer hits this, it should be rare enough to
-  # afford it. If a run ever needs this long again, don't raise it a fourth
-  # time: local reproduction has never taken more than ~5m, so a real 45m+
-  # run is evidence of an actual hang, not just a slow runner, and is worth
-  # investigating properly rather than absorbing with a bigger number.
+  # A prior version of this fix skipped `lint` outright for Dependabot PRs,
+  # reasoning that they never touch .go source. That reasoning doesn't hold:
+  # a dependency bump changes the type information and deprecation metadata
+  # staticcheck/govet analyze, so a bump alone can surface a real new finding
+  # (e.g. SA1019 on a symbol the new version just deprecated) even though our
+  # source is byte-for-byte unchanged — and `test`/`coverage` don't run that
+  # analysis, so skipping lint was a real coverage loss, not a safe no-op.
+  # golangci-lint-action's own cache (restore-key fallback keyed off go.mod)
+  # is already active and gets reused across PRs, but empirically that alone
+  # hasn't kept ./azure's cold-ish runs under the wall — so this leans on the
+  # generous timeout instead. If a run ever needs longer than 45m, don't
+  # raise it further: local reproduction has never taken more than ~5m, so
+  # that's evidence of an actual hang, worth investigating rather than
+  # absorbing with a bigger number.
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    if: github.actor != 'dependabot[bot]'
     strategy:
       matrix:
         module: [".", "./s3", "./gcs", "./azure"]
