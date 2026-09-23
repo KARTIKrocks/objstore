@@ -1,8 +1,8 @@
 .PHONY: all setup test test-race coverage lint lint-fix fix fmt fmt-check vet tidy tidy-check build bench clean ci vuln print-golangci-lint-version print-govulncheck-version
 
 GOLANGCI_LINT_VERSION := v2.13.2
-GOIMPORTS_VERSION := v0.49.0
-GOVULNCHECK_VERSION := v1.7.0
+GOIMPORTS_VERSION := v0.50.0
+GOVULNCHECK_VERSION := v1.8.0
 
 MODULES = . ./s3 ./gcs ./azure
 SUB_MODULES = ./s3 ./gcs ./azure
