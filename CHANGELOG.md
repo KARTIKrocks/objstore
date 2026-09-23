@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `WithIfMatch(etag)` Put option for optimistic concurrency: the write succeeds only if the object still has that ETag, otherwise it fails with the new `ErrPreconditionFailed` sentinel (which also matches `ErrNotFound` if the object is gone). Enforced natively on S3, GCS (via generation preconditions), and Azure
+- The local and memory backends now populate `FileInfo.ETag` from `Put`, `Stat`, and `List`, and GCS and Azure now return it from `Put` too
+
+### Fixed
+
+- `WithOverwrite(false)` is now atomic on the local (`O_EXCL`), GCS (`DoesNotExist` precondition), and Azure (`If-None-Match: *`) backends. Previously they checked existence and then wrote, so concurrent writers could all succeed
+- **Local**: an overwriting `Put` now writes to a temporary file and renames it into place, so a failed or cancelled upload leaves the previous version intact (it used to truncate the file first and then delete it on error) and readers never see a partially written file. The replacement keeps the previous file's permissions, and `List` hides only temp files of the exact generated form `.objstore-tmp-<uuid>`
+
 ## [0.1.7] - 2026-09-08
 
 ### Changed

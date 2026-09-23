@@ -29,3 +29,17 @@ store, err := objstore.NewLocalStorage(
 Local storage has no storage server of its own, so [`SignedURL`](/docs/signed-urls)
 produces **HMAC-signed URLs** that your application verifies — see
 [Signed URLs on the local and memory backends](/docs/signed-urls#local-and-memory).
+
+## Conditional writes
+
+`WithOverwrite(false)` opens the file with `O_EXCL`, so a create-only write is
+atomic even across processes. `WithIfMatch` is atomic only against other `Put`s
+through the same `LocalStorage`. It is not atomic against other processes or
+against `Copy`, `Move`, and `Delete`. The local `ETag` is derived from the
+file's modification time and size, and every `Put` moves the modification time
+forward so that a rewrite always gets a new ETag. An overwriting `Put` writes to
+a temporary file and renames it into place, so a failed upload leaves the
+previous version intact. The replacement keeps the
+old file's permissions. While a write is in progress, its temporary file
+(`.objstore-tmp-<uuid>`) is hidden from `List`. See
+[Conditional Writes](/docs/core-operations#conditional-writes).

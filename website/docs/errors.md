@@ -15,6 +15,8 @@ case errors.Is(err, objstore.ErrNotFound):
     // File doesn't exist
 case errors.Is(err, objstore.ErrAlreadyExists):
     // File already exists (when overwrite=false)
+case errors.Is(err, objstore.ErrPreconditionFailed):
+    // WithIfMatch ETag no longer matches (object changed or was deleted)
 case errors.Is(err, objstore.ErrInvalidPath):
     // Invalid path (e.g., path traversal attempt)
 case errors.Is(err, objstore.ErrPermission):

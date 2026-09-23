@@ -161,15 +161,15 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 
 	blobName := st.blobName(path)
 
-	// Check if file exists
-	if !options.Overwrite {
-		exists, err := st.Exists(ctx, path)
-		if err != nil {
-			return nil, err
-		}
-		if exists {
-			return nil, objstore.ErrAlreadyExists
-		}
+	// Azure evaluates these on the final commit, so they are atomic.
+	var conditions *blob.ModifiedAccessConditions
+	switch {
+	case options.IfMatch != "":
+		etag := azcore.ETag(options.IfMatch)
+		conditions = &blob.ModifiedAccessConditions{IfMatch: &etag}
+	case !options.Overwrite:
+		etag := azcore.ETagAny
+		conditions = &blob.ModifiedAccessConditions{IfNoneMatch: &etag}
 	}
 
 	// Detect content type
@@ -184,23 +184,46 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 		},
 		Metadata: toAzureMetadata(options.Metadata),
 	}
+	if conditions != nil {
+		uploadOpts.AccessConditions = &blob.AccessConditions{ModifiedAccessConditions: conditions}
+	}
 
 	if options.CacheControl != "" {
 		uploadOpts.HTTPHeaders.BlobCacheControl = &options.CacheControl
 	}
 
-	_, err := st.client.UploadStream(ctx, st.config.ContainerName, blobName, reader, uploadOpts)
+	resp, err := st.client.UploadStream(ctx, st.config.ContainerName, blobName, reader, uploadOpts)
 	if err != nil {
-		return nil, err
+		return nil, mapPutError(err, options)
 	}
 
-	return &objstore.FileInfo{
+	info := &objstore.FileInfo{
 		Path:         path,
 		Name:         filepath.Base(path),
 		ContentType:  contentType,
 		LastModified: time.Now(),
 		Metadata:     options.Metadata,
-	}, nil
+	}
+	if resp.ETag != nil {
+		info.ETag = string(*resp.ETag)
+	}
+	if resp.LastModified != nil {
+		info.LastModified = *resp.LastModified
+	}
+	return info, nil
+}
+
+// mapPutError translates a failed conditional upload into objstore sentinels.
+func mapPutError(err error, options *objstore.PutOptions) error {
+	switch {
+	case options.IfMatch != "" && isNotFoundError(err):
+		return fmt.Errorf("%w: %w", objstore.ErrPreconditionFailed, objstore.ErrNotFound)
+	case options.IfMatch != "" && bloberror.HasCode(err, bloberror.ConditionNotMet):
+		return fmt.Errorf("%w: %w", objstore.ErrPreconditionFailed, err)
+	case bloberror.HasCode(err, bloberror.BlobAlreadyExists, bloberror.ConditionNotMet):
+		return objstore.ErrAlreadyExists
+	}
+	return err
 }
 
 // Get retrieves content from Azure Blob Storage.

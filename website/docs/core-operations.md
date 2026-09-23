@@ -37,6 +37,52 @@ objstore.PutString(ctx, store, "hello.txt", "Hello, World!")
 objstore.PutDataURI(ctx, store, "image.png", "data:image/png;base64,...")
 ```
 
+## Conditional Writes
+
+`WithOverwrite(false)` is a create-only write, and every backend checks it
+atomically: of several concurrent writers, exactly one succeeds.
+
+`WithIfMatch` makes a write depend on the object being unchanged. Pass the
+`ETag` from an earlier `Put`, `Stat`, or `List`. If anyone wrote or deleted
+the object since then, the write is rejected with `ErrPreconditionFailed`.
+That gives you optimistic concurrency for read-modify-write updates:
+
+```go
+for {
+    info, err := store.Stat(ctx, "config.json")
+    if err != nil {
+        return err
+    }
+    current, _ := objstore.GetBytes(ctx, store, "config.json")
+    updated := modify(current)
+
+    _, err = store.Put(ctx, "config.json", bytes.NewReader(updated),
+        objstore.WithIfMatch(info.ETag),
+    )
+    if errors.Is(err, objstore.ErrPreconditionFailed) {
+        continue // someone else won the race; re-read and retry
+    }
+    return err
+}
+```
+
+If the object doesn't exist, the error also matches `ErrNotFound`.
+`WithOverwrite` is ignored when `WithIfMatch` is set.
+
+Treat `ETag` as an opaque string. Only pass it back to the same backend it
+came from, because each backend produces its own format.
+
+| Backend | How it is enforced |
+| ------- | ------------------ |
+| S3 | Native `If-Match` / `If-None-Match`, including multipart uploads |
+| GCS | Generation preconditions; the ETag is resolved to the generation that has it |
+| Azure | Native `If-Match` / `If-None-Match` access conditions |
+| Memory | Under the storage lock |
+| Local | `O_EXCL` for create-only, which also holds across processes. `WithIfMatch` is atomic only against other `Put`s on the same `LocalStorage`, not against other processes or `Copy`/`Move`/`Delete` |
+
+Some S3-compatible services don't support conditional writes yet. Check your
+provider before relying on them.
+
 ## Download
 
 ```go

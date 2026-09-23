@@ -67,6 +67,12 @@ reviews:
           are public surface — flag breaking changes and require they be called out.
         - Implementations of the Storage interface must satisfy the same documented
           semantics (e.g. Get on a missing key returns the sentinel not-found error).
+        - Conditional writes (WithOverwrite(false), WithIfMatch) must be enforced
+          atomically by the write itself (O_EXCL / a held lock locally, native
+          If-Match / If-None-Match or GCS generation conditions in the cloud), never
+          by an Exists/Stat check followed by an unconditional write. A rejected
+          WithIfMatch returns ErrPreconditionFailed (also ErrNotFound if the object
+          is gone), and every write must yield a new FileInfo.ETag.
         - Prefer streaming over buffering whole objects in memory; flag unbounded
           io.ReadAll on user-supplied object bodies.
     - path: "**/*_test.go"

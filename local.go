@@ -2,13 +2,18 @@ package objstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"uuid"
 )
 
 // ctxReader wraps an io.Reader and checks context cancellation during Read operations.
@@ -108,8 +113,60 @@ func (c LocalConfig) WithPermissions(file, dir os.FileMode) LocalConfig {
 }
 
 // LocalStorage implements Storage for local filesystem.
+//
+// Conditional Puts (WithIfMatch) are atomic with respect to other Puts made
+// through the same LocalStorage, but not against other processes or against
+// Copy, Move, and Delete. WithOverwrite(false) is atomic across processes.
 type LocalStorage struct {
-	config LocalConfig
+	config    LocalConfig
+	pathLocks keyedMutex
+}
+
+// keyedMutex hands out one mutex per key, dropping it once no one holds or
+// waits on it.
+type keyedMutex struct {
+	mu    sync.Mutex
+	locks map[string]*keyedLock
+}
+
+type keyedLock struct {
+	held chan struct{} // capacity 1; a channel so waiting can honor ctx
+	refs int           // guarded by keyedMutex.mu
+}
+
+// lock acquires key's mutex, giving up with ctx's error if ctx ends first.
+func (k *keyedMutex) lock(ctx context.Context, key string) (unlock func(), err error) {
+	k.mu.Lock()
+	if k.locks == nil {
+		k.locks = make(map[string]*keyedLock)
+	}
+	l := k.locks[key]
+	if l == nil {
+		l = &keyedLock{held: make(chan struct{}, 1)}
+		k.locks[key] = l
+	}
+	l.refs++
+	k.mu.Unlock()
+
+	release := func() {
+		k.mu.Lock()
+		l.refs--
+		if l.refs == 0 {
+			delete(k.locks, key)
+		}
+		k.mu.Unlock()
+	}
+
+	select {
+	case l.held <- struct{}{}:
+	case <-ctx.Done():
+		release()
+		return nil, ctx.Err()
+	}
+	return func() {
+		<-l.held
+		release()
+	}, nil
 }
 
 // NewLocalStorage creates a new local filesystem storage.
@@ -160,11 +217,20 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 		return nil, err
 	}
 
-	// Check if file exists
-	if !options.Overwrite {
-		if _, err := os.Stat(fullPath); err == nil {
-			return nil, ErrAlreadyExists
-		}
+	// Serializing writers per path makes the IfMatch check-then-write atomic
+	// within this process, and lets bumpModTime see the previous version.
+	unlock, err := s.pathLocks.lock(ctx, fullPath)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	prev, statErr := os.Stat(fullPath)
+	exists := statErr == nil
+
+	createOnly, err := checkPutPreconditions(options, prev, statErr)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create directory if needed
@@ -175,24 +241,24 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 		}
 	}
 
-	// Create file
-	file, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, s.config.FilePermissions) //nolint:gosec // fullPath validates the key stays within BasePath
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrPermission, err)
+	var info os.FileInfo
+	if createOnly {
+		// O_EXCL makes create-only atomic even against other processes, and
+		// there is no previous version a failed write could destroy.
+		info, err = s.writeNewFile(ctx, fullPath, reader)
+		if errors.Is(err, fs.ErrExist) {
+			return nil, ErrAlreadyExists
+		}
+	} else {
+		info, err = s.replaceFile(ctx, fullPath, reader, prev) // prev is nil unless it exists
 	}
-
-	// Copy content with context cancellation support
-	ctxR := &ctxReader{ctx: ctx, r: reader}
-	size, err := io.Copy(file, ctxR)
 	if err != nil {
-		_ = file.Close()
-		_ = os.Remove(fullPath)
 		return nil, err
 	}
-
-	if err := file.Close(); err != nil {
-		_ = os.Remove(fullPath)
-		return nil, err
+	if exists {
+		if info, err = bumpModTime(fullPath, prev, info); err != nil {
+			return nil, err
+		}
 	}
 
 	// Detect content type
@@ -204,11 +270,143 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 	return &FileInfo{
 		Path:         path,
 		Name:         filepath.Base(path),
-		Size:         size,
+		Size:         info.Size(),
 		ContentType:  contentType,
-		LastModified: time.Now(),
+		ETag:         localETag(info),
+		LastModified: info.ModTime(),
 		Metadata:     options.Metadata,
 	}, nil
+}
+
+// checkPutPreconditions checks Put's preconditions against the result of
+// stat-ing the destination, and reports whether the write is create-only.
+func checkPutPreconditions(options *PutOptions, prev os.FileInfo, statErr error) (createOnly bool, err error) {
+	switch {
+	case options.IfMatch != "":
+		switch {
+		case errors.Is(statErr, fs.ErrNotExist):
+			return false, fmt.Errorf("%w: %w", ErrPreconditionFailed, ErrNotFound)
+		case errors.Is(statErr, fs.ErrPermission):
+			return false, fmt.Errorf("%w: %w", ErrPermission, statErr)
+		case statErr != nil:
+			return false, statErr
+		case localETag(prev) != options.IfMatch:
+			return false, ErrPreconditionFailed
+		}
+		return false, nil
+	case !options.Overwrite:
+		return true, nil
+	}
+	return false, nil
+}
+
+// tempFilePrefix marks in-progress Put files so List can skip them.
+const tempFilePrefix = ".objstore-tmp-"
+
+// isTempFile reports whether name has exactly the shape replaceFile gives
+// its temporary files, so ordinary objects that merely share the prefix are
+// still listed.
+func isTempFile(name string) bool {
+	rest, ok := strings.CutPrefix(name, tempFilePrefix)
+	if !ok {
+		return false
+	}
+	id, err := uuid.Parse(rest)
+	return err == nil && id.String() == rest
+}
+
+// replaceFile writes reader to a temporary file beside fullPath and renames
+// it into place only once fully written, so a failed or cancelled Put leaves
+// the previous version intact, and readers never see a partial file. prev is
+// the file being replaced, or nil; its permissions carry over, since the
+// rename swaps in a new inode.
+func (s *LocalStorage) replaceFile(ctx context.Context, fullPath string, reader io.Reader, prev os.FileInfo) (os.FileInfo, error) {
+	tmpPath := filepath.Join(filepath.Dir(fullPath), tempFilePrefix+uuid.New().String())
+	info, err := s.writeNewFile(ctx, tmpPath, reader)
+	if err != nil {
+		return nil, err
+	}
+	if prev != nil && prev.Mode().IsRegular() && prev.Mode().Perm() != info.Mode().Perm() {
+		if err := os.Chmod(tmpPath, prev.Mode().Perm()); err != nil {
+			_ = os.Remove(tmpPath)
+			return nil, fmt.Errorf("%w: %w", ErrPermission, err)
+		}
+		if info, err = os.Stat(tmpPath); err != nil {
+			_ = os.Remove(tmpPath)
+			return nil, err
+		}
+	}
+	if err := os.Rename(tmpPath, fullPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return nil, fmt.Errorf("%w: %w", ErrPermission, err)
+	}
+	return info, nil
+}
+
+// writeNewFile creates path (which must not exist) and fills it from reader,
+// removing it again on any failure. The returned info is from fstat, which
+// stays valid after a rename and even if Delete races the write.
+func (s *LocalStorage) writeNewFile(ctx context.Context, path string, reader io.Reader) (os.FileInfo, error) {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, s.config.FilePermissions) //nolint:gosec // callers pass paths validated by fullPath
+	if err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: %w", ErrPermission, err)
+	}
+
+	if _, err := io.Copy(file, &ctxReader{ctx: ctx, r: reader}); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return nil, err
+	}
+	info, statErr := file.Stat()
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return nil, err
+	}
+	if statErr != nil {
+		_ = os.Remove(path)
+		return nil, statErr
+	}
+	return info, nil
+}
+
+// localETag derives an ETag from a file's modification time and size, the
+// same validator scheme HTTP file servers use.
+func localETag(info os.FileInfo) string {
+	return strconv.FormatInt(info.ModTime().UnixNano(), 16) + "-" + strconv.FormatInt(info.Size(), 16)
+}
+
+// bumpModTime guarantees a rewrite changes the file's ETag. Kernel timestamps
+// are coarse (often a clock tick of several milliseconds), so two same-size
+// writes in quick succession can otherwise leave mtime, and so the ETag,
+// unchanged — letting a stale WithIfMatch succeed.
+func bumpModTime(fullPath string, prev, cur os.FileInfo) (os.FileInfo, error) {
+	// Filesystems round stored mtimes (100ns on NTFS, 1–2s on HFS+, ext3,
+	// FAT, and some network mounts), so escalate until the bump survives.
+	for _, step := range []time.Duration{time.Microsecond, time.Second, 2 * time.Second} {
+		if cur.ModTime().After(prev.ModTime()) {
+			return cur, nil
+		}
+		err := os.Chtimes(fullPath, time.Time{}, prev.ModTime().Add(step))
+		if err == nil {
+			var bumped os.FileInfo
+			if bumped, err = os.Stat(fullPath); err == nil {
+				cur = bumped
+			}
+		}
+		if errors.Is(err, fs.ErrNotExist) {
+			return cur, nil // deleted concurrently; there is no version left to protect
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !cur.ModTime().After(prev.ModTime()) {
+		return nil, fmt.Errorf("objstore: cannot advance modification time of %s", fullPath)
+	}
+	return cur, nil
 }
 
 // Get retrieves content from the local filesystem.
@@ -322,14 +520,18 @@ func (s *LocalStorage) Stat(ctx context.Context, path string) (*FileInfo, error)
 		return nil, err
 	}
 
-	return &FileInfo{
+	fi := &FileInfo{
 		Path:         path,
 		Name:         info.Name(),
 		Size:         info.Size(),
 		ContentType:  DetectContentType(path),
 		LastModified: info.ModTime(),
 		IsDir:        info.IsDir(),
-	}, nil
+	}
+	if !info.IsDir() {
+		fi.ETag = localETag(info)
+	}
+	return fi, nil
 }
 
 // List returns files matching the prefix.
@@ -372,7 +574,7 @@ func (s *LocalStorage) List(ctx context.Context, prefix string, opts ...ListOpti
 			return nil
 		}
 
-		if info.IsDir() {
+		if info.IsDir() || isTempFile(info.Name()) {
 			return nil
 		}
 
@@ -387,8 +589,8 @@ func (s *LocalStorage) List(ctx context.Context, prefix string, opts ...ListOpti
 			Name:         info.Name(),
 			Size:         info.Size(),
 			ContentType:  DetectContentType(relPath),
+			ETag:         localETag(info),
 			LastModified: info.ModTime(),
-			IsDir:        info.IsDir(),
 		})
 
 		return nil

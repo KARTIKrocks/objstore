@@ -123,6 +123,14 @@ options through the `Apply*Options` helpers, translate native errors into the
 objstore sentinels, populate `FileInfo` consistently, and honor `context`
 cancellation (see `ctxReader` in `local.go` for the local-fs approach).
 
+`Put` preconditions (`WithOverwrite(false)`, `WithIfMatch`) must be enforced
+atomically by the write itself — `O_EXCL` or a per-path lock locally, native
+`If-Match`/`If-None-Match` on S3/Azure, generation `Conditions` on GCS — never
+by a separate existence check. Every `Put`, `Stat`, and `List` returns an
+`ETag` that round-trips into `WithIfMatch` on the same backend. Cloud backends
+are tested against small `httptest` fakes of their wire APIs (`fakeS3`,
+`fakeGCS`, `fakeAzure`), not live providers.
+
 ## Documentation website
 
 The project's docs site lives in **`website/` on `main`** — a Docusaurus

@@ -20,6 +20,11 @@ var (
 	ErrSignatureInvalid = errors.New("objstore: signed URL signature invalid")
 	ErrSignatureExpired = errors.New("objstore: signed URL expired")
 	ErrInvalidRange     = errors.New("objstore: invalid byte range")
+
+	// ErrPreconditionFailed is returned by a conditional Put (WithIfMatch)
+	// whose condition did not hold. When the object does not exist at all,
+	// the error also matches ErrNotFound.
+	ErrPreconditionFailed = errors.New("objstore: precondition failed")
 )
 
 // Storage defines the interface for storage backends.
@@ -92,6 +97,7 @@ type PutOptions struct {
 	CacheControl string            // Cache-Control header
 	ACL          string            // Access control (e.g., "public-read")
 	Overwrite    bool              // Allow overwriting existing files
+	IfMatch      string            // Only write if the current object's ETag equals this
 }
 
 // PutOption is a function that modifies PutOptions.
@@ -129,6 +135,17 @@ func WithACL(acl string) PutOption {
 func WithOverwrite(overwrite bool) PutOption {
 	return func(o *PutOptions) {
 		o.Overwrite = overwrite
+	}
+}
+
+// WithIfMatch makes Put conditional on the object already existing with the
+// given ETag, as returned in FileInfo.ETag by Put, Stat, or List on the same
+// backend. The write is rejected with ErrPreconditionFailed if the object was
+// changed or deleted in the meantime, which gives compare-and-swap semantics
+// for read-modify-write updates. WithOverwrite has no effect when this is set.
+func WithIfMatch(etag string) PutOption {
+	return func(o *PutOptions) {
+		o.IfMatch = etag
 	}
 }
 
