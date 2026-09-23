@@ -5,9 +5,12 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -140,6 +143,92 @@ func TestLocalPut_WaitHonorsContext(t *testing.T) {
 	_ = feed.Close()
 	if err := <-firstDone; err != nil {
 		t.Errorf("first Put: %v", err)
+	}
+}
+
+// TestLocalPut_FailedOverwriteKeepsPreviousVersion confirms a Put whose body
+// fails part-way leaves the committed file untouched and no temp file behind,
+// matching cloud backends, where a failed upload never replaces the object.
+func TestLocalPut_FailedOverwriteKeepsPreviousVersion(t *testing.T) {
+	ctx := context.Background()
+	for name, opts := range map[string]func(etag string) []PutOption{
+		"overwrite": func(string) []PutOption { return nil },
+		"if match":  func(etag string) []PutOption { return []PutOption{WithIfMatch(etag)} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := newTestLocalStorage(t)
+			v1, err := store.Put(ctx, "doc.txt", strings.NewReader("v1"))
+			if err != nil {
+				t.Fatalf("Put v1: %v", err)
+			}
+
+			failing := io.MultiReader(strings.NewReader("partial"), iotest.ErrReader(errors.New("boom")))
+			if _, err := store.Put(ctx, "doc.txt", failing, opts(v1.ETag)...); err == nil {
+				t.Fatal("Put with failing body succeeded")
+			}
+
+			if got, _ := GetString(ctx, store, "doc.txt"); got != "v1" {
+				t.Errorf("content after failed Put = %q, want %q", got, "v1")
+			}
+			if stat, _ := store.Stat(ctx, "doc.txt"); stat == nil || stat.ETag != v1.ETag {
+				t.Errorf("ETag changed after failed Put: %+v, want %q", stat, v1.ETag)
+			}
+			entries, err := os.ReadDir(store.config.BasePath)
+			if err != nil {
+				t.Fatalf("ReadDir: %v", err)
+			}
+			if len(entries) != 1 {
+				t.Errorf("directory has %d entries, want only doc.txt (temp file leaked?)", len(entries))
+			}
+		})
+	}
+}
+
+// TestLocalPut_IfMatchStatErrorIsNotNotFound confirms an existing path that
+// can't be stat-ed is reported as a permission error, not as a deleted object.
+func TestLocalPut_IfMatchStatErrorIsNotNotFound(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions enforced for the current user")
+	}
+	ctx := context.Background()
+	store := newTestLocalStorage(t)
+	if _, err := store.Put(ctx, "locked/doc.txt", strings.NewReader("v1")); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	dir := filepath.Join(store.config.BasePath, "locked")
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	_, err := store.Put(ctx, "locked/doc.txt", strings.NewReader("v2"), WithIfMatch("anything"))
+	if !errors.Is(err, ErrPermission) {
+		t.Errorf("err = %v, want ErrPermission", err)
+	}
+	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrPreconditionFailed) {
+		t.Errorf("err = %v, must not claim the object is missing or changed", err)
+	}
+}
+
+// TestLocalList_SkipsInProgressTempFiles confirms a Put's temp file is never
+// listed as an object.
+func TestLocalList_SkipsInProgressTempFiles(t *testing.T) {
+	ctx := context.Background()
+	store := newTestLocalStorage(t)
+	if _, err := store.Put(ctx, "doc.txt", strings.NewReader("v1")); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	tmp := filepath.Join(store.config.BasePath, tempFilePrefix+"in-progress")
+	if err := os.WriteFile(tmp, []byte("partial"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	list, err := store.List(ctx, "", WithRecursive(true))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list.Files) != 1 || list.Files[0].Path != "doc.txt" {
+		t.Errorf("List = %+v, want only doc.txt", list.Files)
 	}
 }
 

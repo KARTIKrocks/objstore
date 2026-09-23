@@ -37,5 +37,7 @@ atomic even across processes. `WithIfMatch` is atomic only against other `Put`s
 through the same `LocalStorage`. It is not atomic against other processes or
 against `Copy`, `Move`, and `Delete`. The local `ETag` is derived from the
 file's modification time and size, and every `Put` moves the modification time
-forward so that a rewrite always gets a new ETag. See
+forward so that a rewrite always gets a new ETag. An overwriting `Put` writes to
+a temporary file and renames it into place, so a failed upload leaves the
+previous version intact. See
 [Conditional Writes](/docs/core-operations#conditional-writes).

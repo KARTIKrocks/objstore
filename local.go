@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 )
 
 // ctxReader wraps an io.Reader and checks context cancellation during Read operations.
@@ -227,7 +228,7 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 	prev, statErr := os.Stat(fullPath)
 	exists := statErr == nil
 
-	flags, err := putOpenFlags(options, prev, exists)
+	createOnly, err := checkPutPreconditions(options, prev, statErr)
 	if err != nil {
 		return nil, err
 	}
@@ -240,32 +241,19 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 		}
 	}
 
-	// Create file
-	file, err := os.OpenFile(fullPath, flags, s.config.FilePermissions) //nolint:gosec // fullPath validates the key stays within BasePath
-	if err != nil {
+	var info os.FileInfo
+	if createOnly {
+		// O_EXCL makes create-only atomic even against other processes, and
+		// there is no previous version a failed write could destroy.
+		info, err = s.writeNewFile(ctx, fullPath, reader)
 		if errors.Is(err, fs.ErrExist) {
 			return nil, ErrAlreadyExists
 		}
-		return nil, fmt.Errorf("%w: %w", ErrPermission, err)
+	} else {
+		info, err = s.replaceFile(ctx, fullPath, reader)
 	}
-
-	// Copy content with context cancellation support
-	ctxR := &ctxReader{ctx: ctx, r: reader}
-	if _, err := io.Copy(file, ctxR); err != nil {
-		_ = file.Close()
-		_ = os.Remove(fullPath)
+	if err != nil {
 		return nil, err
-	}
-
-	// fstat, not stat: Delete doesn't take pathLocks, so the path may already
-	// be gone by now.
-	info, statErr := file.Stat()
-	if err := file.Close(); err != nil {
-		_ = os.Remove(fullPath)
-		return nil, err
-	}
-	if statErr != nil {
-		return nil, statErr
 	}
 	if exists {
 		if info, err = bumpModTime(fullPath, prev, info); err != nil {
@@ -290,22 +278,74 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 	}, nil
 }
 
-// putOpenFlags checks Put's preconditions against the current file (prev,
-// when exists) and returns the flags to open it with.
-func putOpenFlags(options *PutOptions, prev os.FileInfo, exists bool) (int, error) {
+// checkPutPreconditions checks Put's preconditions against the result of
+// stat-ing the destination, and reports whether the write is create-only.
+func checkPutPreconditions(options *PutOptions, prev os.FileInfo, statErr error) (createOnly bool, err error) {
 	switch {
 	case options.IfMatch != "":
-		if !exists {
-			return 0, fmt.Errorf("%w: %w", ErrPreconditionFailed, ErrNotFound)
+		switch {
+		case errors.Is(statErr, fs.ErrNotExist):
+			return false, fmt.Errorf("%w: %w", ErrPreconditionFailed, ErrNotFound)
+		case errors.Is(statErr, fs.ErrPermission):
+			return false, fmt.Errorf("%w: %w", ErrPermission, statErr)
+		case statErr != nil:
+			return false, statErr
+		case localETag(prev) != options.IfMatch:
+			return false, ErrPreconditionFailed
 		}
-		if localETag(prev) != options.IfMatch {
-			return 0, ErrPreconditionFailed
-		}
+		return false, nil
 	case !options.Overwrite:
-		// O_EXCL makes create-only atomic even against other processes.
-		return os.O_WRONLY | os.O_CREATE | os.O_EXCL, nil
+		return true, nil
 	}
-	return os.O_WRONLY | os.O_CREATE | os.O_TRUNC, nil
+	return false, nil
+}
+
+// tempFilePrefix marks in-progress Put files so List can skip them.
+const tempFilePrefix = ".objstore-tmp-"
+
+// replaceFile writes reader to a temporary file beside fullPath and renames
+// it into place only once fully written, so a failed or cancelled Put leaves
+// the previous version intact, and readers never see a partial file.
+func (s *LocalStorage) replaceFile(ctx context.Context, fullPath string, reader io.Reader) (os.FileInfo, error) {
+	tmpPath := filepath.Join(filepath.Dir(fullPath), tempFilePrefix+uuid.New().String())
+	info, err := s.writeNewFile(ctx, tmpPath, reader)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Rename(tmpPath, fullPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return nil, fmt.Errorf("%w: %w", ErrPermission, err)
+	}
+	return info, nil
+}
+
+// writeNewFile creates path (which must not exist) and fills it from reader,
+// removing it again on any failure. The returned info is from fstat, which
+// stays valid after a rename and even if Delete races the write.
+func (s *LocalStorage) writeNewFile(ctx context.Context, path string, reader io.Reader) (os.FileInfo, error) {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, s.config.FilePermissions) //nolint:gosec // callers pass paths validated by fullPath
+	if err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: %w", ErrPermission, err)
+	}
+
+	if _, err := io.Copy(file, &ctxReader{ctx: ctx, r: reader}); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return nil, err
+	}
+	info, statErr := file.Stat()
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return nil, err
+	}
+	if statErr != nil {
+		_ = os.Remove(path)
+		return nil, statErr
+	}
+	return info, nil
 }
 
 // localETag derives an ETag from a file's modification time and size, the
@@ -510,7 +550,7 @@ func (s *LocalStorage) List(ctx context.Context, prefix string, opts ...ListOpti
 			return nil
 		}
 
-		if info.IsDir() {
+		if info.IsDir() || strings.HasPrefix(info.Name(), tempFilePrefix) {
 			return nil
 		}
 
