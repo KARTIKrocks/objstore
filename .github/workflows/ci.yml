@@ -55,31 +55,26 @@ jobs:
           flags: ${{ matrix.module }}
           fail_ci_if_error: false
 
-  # ./azure lint went through four rounds of "just raise the timeout" (5m/10m,
-  # 15m/20m, 25m/30m, 40m/45m) and every one still failed at (not before) the
-  # configured wall. The last attempt's own instrumentation confirms it's not
-  # cancelled early: "Ran golangci-lint in 2410812ms" — 40.18m against a 40m
-  # --timeout, i.e. golangci-lint's own watchdog fired on schedule, after
-  # genuinely running that long. That's ~8-10x the ~4-5m this takes locally,
-  # a gap too large for "GitHub runners have fewer cores" alone to explain.
+  # ./azure lint has now failed five straight timeout-tuning attempts
+  # (5m/10m, 15m/20m, 25m/30m, 40m/45m, then 10m/15m with --concurrency=4 /
+  # GOMAXPROCS=4 pinned — that one is the least informative of the five: it
+  # was killed by the *job*-level timeout, not golangci-lint's own, and a
+  # process killed by external cancellation never flushes buffered stdout —
+  # so despite -v being on, the log shows nothing between the command
+  # starting and "operation was canceled". The --concurrency=4 guess was
+  # never actually verified against this runner's real core count, and may
+  # have made things worse rather than better.
   #
-  # Prime suspect: Go's runtime (and golangci-lint's own worker pool, which
-  # defaults to the same NumCPU()) misdetecting available CPUs inside a
-  # containerized CI runner — reading the host's core count rather than the
-  # container's actual quota is a well-documented failure mode, and it
-  # produces exactly this shape of bug: catastrophic goroutine-scheduling
-  # thrashing that's invisible on a normal local machine. `-v` below is
-  # temporary — it gives real per-stage timing from CI if this doesn't fix
-  # it, instead of guessing again. Pinning --concurrency (and GOMAXPROCS) to
-  # ubuntu-latest's actual 4 vCPUs is the fix being tried.
-  #
-  # (A prior version of this fix skipped `lint` outright for Dependabot PRs;
-  # reverted — a dependency bump changes the type/deprecation info
-  # staticcheck analyzes, so it can surface a real new finding with zero
-  # source changes, and test/coverage don't run that analysis.)
+  # Stop guessing: `nproc`/cpuinfo below prints the runner's actual core
+  # count (previously assumed, never checked), and the timeout margin is
+  # widened again (45m job vs 40m --timeout) specifically so golangci-lint
+  # exits *gracefully* on its own schedule — that's the only way a killed
+  # process's -v output actually reaches the log instead of being lost.
+  # Next failure should be read for real per-stage timing, not treated as
+  # another data point for "raise the number again".
   lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     strategy:
       matrix:
         module: [".", "./s3", "./gcs", "./azure"]
@@ -88,12 +83,17 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.27"
+      - name: Report runner CPU/memory (diagnostic for the ./azure lint slowness)
+        if: matrix.module == './azure'
+        run: |
+          echo "nproc: $(nproc)"
+          echo "cpuinfo processors: $(grep -c ^processor /proc/cpuinfo)"
+          go env GOMAXPROCS || true
+          free -h
       - uses: golangci/golangci-lint-action@v9
-        env:
-          GOMAXPROCS: "4"
         with:
           version: v2.13.0
-          args: --timeout=10m --concurrency=4 -v
+          args: --timeout=40m -v
           working-directory: ${{ matrix.module }}
 
   # Structural linting for every Markdown file in the repo. This lives here
