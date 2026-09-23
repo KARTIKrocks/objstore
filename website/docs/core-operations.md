@@ -73,7 +73,7 @@ Treat `ETag` as an opaque string. Only pass it back to the same backend it
 came from, because each backend produces its own format.
 
 | Backend | How it is enforced |
-|---------|--------------------|
+| ------- | ------------------ |
 | S3 | Native `If-Match` / `If-None-Match`, including multipart uploads |
 | GCS | Generation preconditions; the ETag is resolved to the generation that has it |
 | Azure | Native `If-Match` / `If-None-Match` access conditions |
