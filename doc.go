@@ -65,4 +65,16 @@
 //	    objstore.WithACL("public-read"),
 //	    objstore.WithOverwrite(false),
 //	)
+//
+// # Conditional Writes
+//
+// WithOverwrite(false) is an atomic create-only write. WithIfMatch updates an
+// object only if it still has the ETag you last saw, failing with
+// ErrPreconditionFailed otherwise:
+//
+//	info, _ := store.Stat(ctx, path)
+//	_, err := store.Put(ctx, path, reader, objstore.WithIfMatch(info.ETag))
+//	if errors.Is(err, objstore.ErrPreconditionFailed) {
+//	    // changed concurrently; re-read and retry
+//	}
 package objstore

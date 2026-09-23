@@ -59,6 +59,7 @@ consistent across all five.
 - **Streaming Multipart Upload**: bodies past 5MiB split into bounded-memory parts through S3's multipart uploader automatically
 - **Signed URLs Everywhere**: cloud backends presign natively; local and memory produce verifiable HMAC-signed URLs
 - **Ranged Downloads**: resume downloads or seek into large files with byte-range requests
+- **Conditional Writes**: atomic create-only writes (`WithOverwrite(false)`) and compare-and-swap updates (`WithIfMatch`), enforced natively by each cloud provider
 - **Built-in Helpers**: unique/date/hash-distributed path generation, file-type detection, size formatting, directory sync
 - **Sentinel Errors**: a small, consistent error set matched with `errors.Is` across every backend
 - **Zero-Dependency Root Module**: the core package has no third-party dependencies; cloud SDKs live in their own submodules
@@ -290,6 +291,15 @@ info, err := store.Put(ctx, "images/photo.jpg", file,
 )
 if errors.Is(err, objstore.ErrAlreadyExists) {
     // File already exists
+}
+
+// Update only if nobody changed it since you read it (optimistic concurrency)
+stat, _ := store.Stat(ctx, "config.json")
+_, err = store.Put(ctx, "config.json", bytes.NewReader(updated),
+    objstore.WithIfMatch(stat.ETag),
+)
+if errors.Is(err, objstore.ErrPreconditionFailed) {
+    // Changed or deleted concurrently — re-read and retry
 }
 
 // Helper functions
@@ -561,6 +571,8 @@ case errors.Is(err, objstore.ErrNotFound):
     // File doesn't exist
 case errors.Is(err, objstore.ErrAlreadyExists):
     // File already exists (when overwrite=false)
+case errors.Is(err, objstore.ErrPreconditionFailed):
+    // WithIfMatch ETag no longer matches (object changed or was deleted)
 case errors.Is(err, objstore.ErrInvalidPath):
     // Invalid path (e.g., path traversal attempt)
 case errors.Is(err, objstore.ErrPermission):

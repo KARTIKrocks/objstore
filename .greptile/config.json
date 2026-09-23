@@ -14,8 +14,14 @@
     },
     {
       "id": "sentinel-error-mapping",
-      "rule": "Provider-specific errors (AWS SDK error codes, storage.ErrObjectNotExist, bloberror codes, os.IsNotExist, etc.) must be translated to the package's sentinel errors (ErrNotFound, ErrAlreadyExists, ErrInvalidPath, ErrPermission, ErrNotImplemented, ErrInvalidRange, ErrSignatureInvalid, ErrSignatureExpired) via a type-safe check (errors.As, errors.Is, or an SDK-provided predicate), never by matching on an error's string message. Flag any backend method that returns a raw provider error where a sentinel applies.",
+      "rule": "Provider-specific errors (AWS SDK error codes, storage.ErrObjectNotExist, bloberror codes, os.IsNotExist, etc.) must be translated to the package's sentinel errors (ErrNotFound, ErrAlreadyExists, ErrInvalidPath, ErrPermission, ErrNotImplemented, ErrInvalidRange, ErrPreconditionFailed, ErrSignatureInvalid, ErrSignatureExpired) via a type-safe check (errors.As, errors.Is, or an SDK-provided predicate), never by matching on an error's string message. Flag any backend method that returns a raw provider error where a sentinel applies.",
       "scope": ["**/*.go"],
+      "severity": "high"
+    },
+    {
+      "id": "atomic-preconditions",
+      "rule": "Write preconditions (PutOptions.Overwrite=false, PutOptions.IfMatch, and any future conditional option) must be enforced by the write itself — O_EXCL or a lock held across check and write for local/memory, native If-Match/If-None-Match or GCS generation Conditions for cloud backends — never by a separate Exists/Stat call followed by an unconditional write. Every write path must also produce a new FileInfo.ETag, so a stale WithIfMatch cannot succeed. See .greptile/rules.md.",
+      "scope": ["local.go", "memory.go", "s3/**/*.go", "gcs/**/*.go", "azure/**/*.go"],
       "severity": "high"
     },
     {

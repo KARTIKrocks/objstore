@@ -2,12 +2,16 @@ package objstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -108,8 +112,60 @@ func (c LocalConfig) WithPermissions(file, dir os.FileMode) LocalConfig {
 }
 
 // LocalStorage implements Storage for local filesystem.
+//
+// Conditional Puts (WithIfMatch) are atomic with respect to other Puts made
+// through the same LocalStorage, but not against other processes or against
+// Copy, Move, and Delete. WithOverwrite(false) is atomic across processes.
 type LocalStorage struct {
-	config LocalConfig
+	config    LocalConfig
+	pathLocks keyedMutex
+}
+
+// keyedMutex hands out one mutex per key, dropping it once no one holds or
+// waits on it.
+type keyedMutex struct {
+	mu    sync.Mutex
+	locks map[string]*keyedLock
+}
+
+type keyedLock struct {
+	held chan struct{} // capacity 1; a channel so waiting can honor ctx
+	refs int           // guarded by keyedMutex.mu
+}
+
+// lock acquires key's mutex, giving up with ctx's error if ctx ends first.
+func (k *keyedMutex) lock(ctx context.Context, key string) (unlock func(), err error) {
+	k.mu.Lock()
+	if k.locks == nil {
+		k.locks = make(map[string]*keyedLock)
+	}
+	l := k.locks[key]
+	if l == nil {
+		l = &keyedLock{held: make(chan struct{}, 1)}
+		k.locks[key] = l
+	}
+	l.refs++
+	k.mu.Unlock()
+
+	release := func() {
+		k.mu.Lock()
+		l.refs--
+		if l.refs == 0 {
+			delete(k.locks, key)
+		}
+		k.mu.Unlock()
+	}
+
+	select {
+	case l.held <- struct{}{}:
+	case <-ctx.Done():
+		release()
+		return nil, ctx.Err()
+	}
+	return func() {
+		<-l.held
+		release()
+	}, nil
 }
 
 // NewLocalStorage creates a new local filesystem storage.
@@ -160,11 +216,20 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 		return nil, err
 	}
 
-	// Check if file exists
-	if !options.Overwrite {
-		if _, err := os.Stat(fullPath); err == nil {
-			return nil, ErrAlreadyExists
-		}
+	// Serializing writers per path makes the IfMatch check-then-write atomic
+	// within this process, and lets bumpModTime see the previous version.
+	unlock, err := s.pathLocks.lock(ctx, fullPath)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	prev, statErr := os.Stat(fullPath)
+	exists := statErr == nil
+
+	flags, err := putOpenFlags(options, prev, exists)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create directory if needed
@@ -176,23 +241,36 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 	}
 
 	// Create file
-	file, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, s.config.FilePermissions) //nolint:gosec // fullPath validates the key stays within BasePath
+	file, err := os.OpenFile(fullPath, flags, s.config.FilePermissions) //nolint:gosec // fullPath validates the key stays within BasePath
 	if err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return nil, ErrAlreadyExists
+		}
 		return nil, fmt.Errorf("%w: %w", ErrPermission, err)
 	}
 
 	// Copy content with context cancellation support
 	ctxR := &ctxReader{ctx: ctx, r: reader}
-	size, err := io.Copy(file, ctxR)
-	if err != nil {
+	if _, err := io.Copy(file, ctxR); err != nil {
 		_ = file.Close()
 		_ = os.Remove(fullPath)
 		return nil, err
 	}
 
+	// fstat, not stat: Delete doesn't take pathLocks, so the path may already
+	// be gone by now.
+	info, statErr := file.Stat()
 	if err := file.Close(); err != nil {
 		_ = os.Remove(fullPath)
 		return nil, err
+	}
+	if statErr != nil {
+		return nil, statErr
+	}
+	if exists {
+		if info, err = bumpModTime(fullPath, prev, info); err != nil {
+			return nil, err
+		}
 	}
 
 	// Detect content type
@@ -204,11 +282,67 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 	return &FileInfo{
 		Path:         path,
 		Name:         filepath.Base(path),
-		Size:         size,
+		Size:         info.Size(),
 		ContentType:  contentType,
-		LastModified: time.Now(),
+		ETag:         localETag(info),
+		LastModified: info.ModTime(),
 		Metadata:     options.Metadata,
 	}, nil
+}
+
+// putOpenFlags checks Put's preconditions against the current file (prev,
+// when exists) and returns the flags to open it with.
+func putOpenFlags(options *PutOptions, prev os.FileInfo, exists bool) (int, error) {
+	switch {
+	case options.IfMatch != "":
+		if !exists {
+			return 0, fmt.Errorf("%w: %w", ErrPreconditionFailed, ErrNotFound)
+		}
+		if localETag(prev) != options.IfMatch {
+			return 0, ErrPreconditionFailed
+		}
+	case !options.Overwrite:
+		// O_EXCL makes create-only atomic even against other processes.
+		return os.O_WRONLY | os.O_CREATE | os.O_EXCL, nil
+	}
+	return os.O_WRONLY | os.O_CREATE | os.O_TRUNC, nil
+}
+
+// localETag derives an ETag from a file's modification time and size, the
+// same validator scheme HTTP file servers use.
+func localETag(info os.FileInfo) string {
+	return strconv.FormatInt(info.ModTime().UnixNano(), 16) + "-" + strconv.FormatInt(info.Size(), 16)
+}
+
+// bumpModTime guarantees a rewrite changes the file's ETag. Kernel timestamps
+// are coarse (often a clock tick of several milliseconds), so two same-size
+// writes in quick succession can otherwise leave mtime, and so the ETag,
+// unchanged — letting a stale WithIfMatch succeed.
+func bumpModTime(fullPath string, prev, cur os.FileInfo) (os.FileInfo, error) {
+	// Filesystems round stored mtimes (100ns on NTFS, 1–2s on HFS+, ext3,
+	// FAT, and some network mounts), so escalate until the bump survives.
+	for _, step := range []time.Duration{time.Microsecond, time.Second, 2 * time.Second} {
+		if cur.ModTime().After(prev.ModTime()) {
+			return cur, nil
+		}
+		err := os.Chtimes(fullPath, time.Time{}, prev.ModTime().Add(step))
+		if err == nil {
+			var bumped os.FileInfo
+			if bumped, err = os.Stat(fullPath); err == nil {
+				cur = bumped
+			}
+		}
+		if errors.Is(err, fs.ErrNotExist) {
+			return cur, nil // deleted concurrently; there is no version left to protect
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !cur.ModTime().After(prev.ModTime()) {
+		return nil, fmt.Errorf("objstore: cannot advance modification time of %s", fullPath)
+	}
+	return cur, nil
 }
 
 // Get retrieves content from the local filesystem.
@@ -322,14 +456,18 @@ func (s *LocalStorage) Stat(ctx context.Context, path string) (*FileInfo, error)
 		return nil, err
 	}
 
-	return &FileInfo{
+	fi := &FileInfo{
 		Path:         path,
 		Name:         info.Name(),
 		Size:         info.Size(),
 		ContentType:  DetectContentType(path),
 		LastModified: info.ModTime(),
 		IsDir:        info.IsDir(),
-	}, nil
+	}
+	if !info.IsDir() {
+		fi.ETag = localETag(info)
+	}
+	return fi, nil
 }
 
 // List returns files matching the prefix.
@@ -387,8 +525,8 @@ func (s *LocalStorage) List(ctx context.Context, prefix string, opts ...ListOpti
 			Name:         info.Name(),
 			Size:         info.Size(),
 			ContentType:  DetectContentType(relPath),
+			ETag:         localETag(info),
 			LastModified: info.ModTime(),
-			IsDir:        info.IsDir(),
 		})
 
 		return nil

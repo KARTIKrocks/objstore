@@ -27,6 +27,7 @@ type fakeS3 struct {
 	failPartNumber      string // if set, UploadPart for this partNumber always fails
 	failAbortAttempts   int    // this many leading AbortMultipartUpload calls fail
 	completeIfNoneMatch string
+	completeIfMatch     string
 	abortAttempts       int           // every AbortMultipartUpload call, success or not
 	abortRequests       []string      // uploadIds seen on a *successful* AbortMultipartUpload
 	partHeaders         []http.Header // headers seen on each UploadPart request, in order
@@ -78,6 +79,7 @@ func (f *fakeS3) handle(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && q.Has("uploadId"):
 		f.mu.Lock()
 		f.completeIfNoneMatch = r.Header.Get("If-None-Match")
+		f.completeIfMatch = r.Header.Get("If-Match")
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/xml")
 		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>

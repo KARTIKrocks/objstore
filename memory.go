@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,7 @@ import (
 type MemoryStorage struct {
 	mu            sync.RWMutex
 	files         map[string]*memoryFile
+	version       uint64 // guarded by mu; source of unique ETags
 	baseURL       string
 	signingSecret string
 }
@@ -27,6 +29,14 @@ type memoryFile struct {
 	contentType string
 	metadata    map[string]string
 	modTime     time.Time
+	etag        string
+}
+
+// nextETag returns an ETag unique within this storage. The caller must hold
+// the write lock.
+func (s *MemoryStorage) nextETag() string {
+	s.version++
+	return strconv.FormatUint(s.version, 16)
 }
 
 // NewMemoryStorage creates a new in-memory storage.
@@ -70,11 +80,17 @@ func (s *MemoryStorage) Put(ctx context.Context, path string, reader io.Reader, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if file exists
-	if !options.Overwrite {
-		if _, exists := s.files[path]; exists {
-			return nil, ErrAlreadyExists
+	existing, exists := s.files[path]
+	switch {
+	case options.IfMatch != "":
+		if !exists {
+			return nil, fmt.Errorf("%w: %w", ErrPreconditionFailed, ErrNotFound)
 		}
+		if existing.etag != options.IfMatch {
+			return nil, ErrPreconditionFailed
+		}
+	case !options.Overwrite && exists:
+		return nil, ErrAlreadyExists
 	}
 
 	// Detect content type
@@ -83,22 +99,16 @@ func (s *MemoryStorage) Put(ctx context.Context, path string, reader io.Reader, 
 		contentType = DetectContentType(path)
 	}
 
-	// Store file
-	s.files[path] = &memoryFile{
+	file := &memoryFile{
 		data:        data,
 		contentType: contentType,
 		metadata:    options.Metadata,
 		modTime:     time.Now(),
+		etag:        s.nextETag(),
 	}
+	s.files[path] = file
 
-	return &FileInfo{
-		Path:         path,
-		Name:         filepath.Base(path),
-		Size:         int64(len(data)),
-		ContentType:  contentType,
-		LastModified: s.files[path].modTime,
-		Metadata:     options.Metadata,
-	}, nil
+	return file.info(path), nil
 }
 
 // Get retrieves content from memory.
@@ -175,14 +185,19 @@ func (s *MemoryStorage) Stat(ctx context.Context, path string) (*FileInfo, error
 		return nil, ErrNotFound
 	}
 
+	return file.info(path), nil
+}
+
+func (f *memoryFile) info(path string) *FileInfo {
 	return &FileInfo{
 		Path:         path,
 		Name:         filepath.Base(path),
-		Size:         int64(len(file.data)),
-		ContentType:  file.contentType,
-		LastModified: file.modTime,
-		Metadata:     file.metadata,
-	}, nil
+		Size:         int64(len(f.data)),
+		ContentType:  f.contentType,
+		ETag:         f.etag,
+		LastModified: f.modTime,
+		Metadata:     f.metadata,
+	}
 }
 
 // List returns files matching the prefix.
@@ -238,15 +253,7 @@ func (s *MemoryStorage) List(ctx context.Context, prefix string, opts ...ListOpt
 			break
 		}
 
-		file := snapshot[path]
-		result.Files = append(result.Files, &FileInfo{
-			Path:         path,
-			Name:         filepath.Base(path),
-			Size:         int64(len(file.data)),
-			ContentType:  file.contentType,
-			LastModified: file.modTime,
-			Metadata:     file.metadata,
-		})
+		result.Files = append(result.Files, snapshot[path].info(path))
 		count++
 	}
 
@@ -281,6 +288,7 @@ func (s *MemoryStorage) Copy(ctx context.Context, src, dst string) error {
 		contentType: file.contentType,
 		metadata:    newMetadata,
 		modTime:     time.Now(),
+		etag:        s.nextETag(),
 	}
 
 	return nil
@@ -307,6 +315,7 @@ func (s *MemoryStorage) Move(ctx context.Context, src, dst string) error {
 		contentType: file.contentType,
 		metadata:    file.metadata,
 		modTime:     time.Now(),
+		etag:        s.nextETag(),
 	}
 	delete(s.files, src)
 

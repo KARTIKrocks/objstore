@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -142,20 +143,11 @@ func (st *Storage) Close() error {
 func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts ...objstore.PutOption) (*objstore.FileInfo, error) {
 	options := objstore.ApplyPutOptions(opts)
 
-	objectName := st.objectName(path)
-
-	// Check if file exists
-	if !options.Overwrite {
-		exists, err := st.Exists(ctx, path)
-		if err != nil {
-			return nil, err
-		}
-		if exists {
-			return nil, objstore.ErrAlreadyExists
-		}
+	obj, err := conditionalObject(ctx, st.bucket.Object(st.objectName(path)), options)
+	if err != nil {
+		return nil, err
 	}
 
-	obj := st.bucket.Object(objectName)
 	writer := obj.NewWriter(ctx)
 
 	// Set content type
@@ -185,22 +177,72 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 	// Upload
 	size, err := io.Copy(writer, reader)
 	if err != nil {
-		closeErr := writer.Close()
-		return nil, errors.Join(err, closeErr)
+		err = errors.Join(err, writer.Close())
+	} else {
+		err = writer.Close()
+	}
+	if err != nil {
+		return nil, st.mapPutError(ctx, obj, err, options)
 	}
 
-	if err := writer.Close(); err != nil {
-		return nil, err
-	}
-
-	return &objstore.FileInfo{
+	info := &objstore.FileInfo{
 		Path:         path,
 		Name:         filepath.Base(path),
 		Size:         size,
 		ContentType:  writer.ContentType,
 		LastModified: time.Now(),
 		Metadata:     options.Metadata,
-	}, nil
+	}
+	if attrs := writer.Attrs(); attrs != nil {
+		info.ETag = attrs.Etag
+		info.LastModified = attrs.Updated
+	}
+	return info, nil
+}
+
+// conditionalObject attaches Put's preconditions to obj. GCS preconditions
+// work on generations, not ETags, so IfMatch is resolved to the generation
+// (and metageneration, which also changes the ETag) of the matching version;
+// GCS then rejects the write atomically if the object moved on since.
+func conditionalObject(ctx context.Context, obj *storage.ObjectHandle, options *objstore.PutOptions) (*storage.ObjectHandle, error) {
+	switch {
+	case options.IfMatch != "":
+		attrs, err := obj.Attrs(ctx)
+		if err != nil {
+			if errors.Is(err, storage.ErrObjectNotExist) {
+				return nil, fmt.Errorf("%w: %w", objstore.ErrPreconditionFailed, objstore.ErrNotFound)
+			}
+			return nil, err
+		}
+		if attrs.Etag != options.IfMatch {
+			return nil, objstore.ErrPreconditionFailed
+		}
+		return obj.If(storage.Conditions{
+			GenerationMatch:     attrs.Generation,
+			MetagenerationMatch: attrs.Metageneration,
+		}), nil
+	case !options.Overwrite:
+		return obj.If(storage.Conditions{DoesNotExist: true}), nil
+	}
+	return obj, nil
+}
+
+// mapPutError translates a rejected conditional upload into objstore sentinels.
+// GCS answers a generation mismatch with the same 412 whether the object was
+// rewritten or deleted, so an IfMatch rejection re-checks existence to honor
+// the ErrNotFound half of the contract.
+func (st *Storage) mapPutError(ctx context.Context, obj *storage.ObjectHandle, err error, options *objstore.PutOptions) error {
+	apiErr, ok := errors.AsType[*googleapi.Error](err)
+	if !ok || apiErr.Code != http.StatusPreconditionFailed {
+		return err
+	}
+	if options.IfMatch == "" {
+		return objstore.ErrAlreadyExists
+	}
+	if _, attrErr := st.bucket.Object(obj.ObjectName()).Attrs(ctx); errors.Is(attrErr, storage.ErrObjectNotExist) {
+		return fmt.Errorf("%w: %w", objstore.ErrPreconditionFailed, objstore.ErrNotFound)
+	}
+	return fmt.Errorf("%w: %w", objstore.ErrPreconditionFailed, err)
 }
 
 // Get retrieves content from GCS.

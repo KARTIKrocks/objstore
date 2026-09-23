@@ -51,6 +51,11 @@ const FEATURES = [
       'Resume downloads or seek into large files with byte-range requests',
   },
   {
+    title: 'Conditional Writes',
+    description:
+      'Atomic create-only writes and ETag compare-and-swap updates, enforced natively by each provider',
+  },
+  {
     title: 'Built-in Helpers',
     description:
       'Unique/date/hash-distributed path generation, file-type detection, size formatting, directory sync',

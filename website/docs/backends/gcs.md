@@ -36,3 +36,12 @@ store, err := gcs.New(ctx,
 
 defer store.Close()
 ```
+
+## Conditional writes
+
+GCS preconditions compare generations, not ETags. So `WithIfMatch` first reads
+the object's metadata, then writes with a generation and metageneration match.
+That costs one extra metadata request per conditional `Put`, and GCS still
+rejects the write atomically if the object changed in between.
+`WithOverwrite(false)` uses the `DoesNotExist` precondition. See
+[Conditional Writes](/docs/core-operations#conditional-writes).

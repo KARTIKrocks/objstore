@@ -269,8 +269,13 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 		ContentType: aws.String(contentType),
 	}
 
-	// Use atomic conditional put if overwrite is disabled
-	if !options.Overwrite {
+	// Conditional writes are evaluated atomically by S3 (on
+	// CompleteMultipartUpload for large bodies; manager.Uploader copies these
+	// fields there).
+	switch {
+	case options.IfMatch != "":
+		input.IfMatch = aws.String(quoteETag(options.IfMatch))
+	case !options.Overwrite:
 		input.IfNoneMatch = aws.String("*")
 	}
 
@@ -306,11 +311,7 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 		// failure — run it before mapping the error, not instead of it.
 		st.abortOrphanedMultipart(key, err) //nolint:contextcheck // deliberately retries with a fresh context, see doc comment above
 
-		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "PreconditionFailed" {
-			return nil, objstore.ErrAlreadyExists
-		}
-		return nil, err
+		return nil, mapPutError(err, options)
 	}
 
 	etag := ""
@@ -326,6 +327,36 @@ func (st *Storage) Put(ctx context.Context, path string, reader io.Reader, opts 
 		LastModified: time.Now(),
 		Metadata:     options.Metadata,
 	}, nil
+}
+
+// mapPutError translates a failed conditional upload into objstore sentinels.
+// With If-Match, a missing object is reported by S3 as NoSuchKey (404) rather
+// than PreconditionFailed.
+func mapPutError(err error, options *objstore.PutOptions) error {
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) {
+		return err
+	}
+	switch code := apiErr.ErrorCode(); {
+	// ConditionalRequestConflict (409) means a concurrent write to the key
+	// raced this one; like a mismatch, the caller should re-read and retry.
+	case (code == "PreconditionFailed" || code == "ConditionalRequestConflict") && options.IfMatch != "":
+		return fmt.Errorf("%w: %w", objstore.ErrPreconditionFailed, err)
+	case code == "PreconditionFailed":
+		return objstore.ErrAlreadyExists
+	case options.IfMatch != "" && (code == "NoSuchKey" || code == "NotFound"):
+		return fmt.Errorf("%w: %w", objstore.ErrPreconditionFailed, objstore.ErrNotFound)
+	}
+	return err
+}
+
+// quoteETag wraps an ETag in the double quotes S3 uses on the wire; FileInfo
+// carries it unquoted.
+func quoteETag(etag string) string {
+	if strings.HasPrefix(etag, `"`) {
+		return etag
+	}
+	return `"` + etag + `"`
 }
 
 // abortOrphanedMultipart best-effort cleans up a multipart upload that
