@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `WithOverwrite(false)` is now atomic on the local (`O_EXCL`), GCS (`DoesNotExist` precondition), and Azure (`If-None-Match: *`) backends. Previously they checked existence and then wrote, so concurrent writers could all succeed
-- **Local**: an overwriting `Put` now writes to a temporary file and renames it into place, so a failed or cancelled upload leaves the previous version intact (it used to truncate the file first and then delete it on error) and readers never see a partially written file
+- **Local**: an overwriting `Put` now writes to a temporary file and renames it into place, so a failed or cancelled upload leaves the previous version intact (it used to truncate the file first and then delete it on error) and readers never see a partially written file. The replacement keeps the previous file's permissions, and `List` hides only temp files of the exact generated form `.objstore-tmp-<uuid>`
 
 ## [0.1.7] - 2026-09-08
 

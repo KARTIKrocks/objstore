@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"testing/iotest"
 	"time"
+	"uuid"
 )
 
 // conditionalBackends runs each conditional-write test against every
@@ -210,15 +212,18 @@ func TestLocalPut_IfMatchStatErrorIsNotNotFound(t *testing.T) {
 	}
 }
 
-// TestLocalList_SkipsInProgressTempFiles confirms a Put's temp file is never
-// listed as an object.
-func TestLocalList_SkipsInProgressTempFiles(t *testing.T) {
+// TestLocalList_SkipsOnlyInternalTempFiles confirms a Put's temp file is
+// never listed as an object, while an ordinary object that merely shares the
+// temp prefix still is, as it would be on any other backend.
+func TestLocalList_SkipsOnlyInternalTempFiles(t *testing.T) {
 	ctx := context.Background()
 	store := newTestLocalStorage(t)
-	if _, err := store.Put(ctx, "doc.txt", strings.NewReader("v1")); err != nil {
-		t.Fatalf("Put: %v", err)
+	for _, key := range []string{"doc.txt", tempFilePrefix + "report.txt"} {
+		if _, err := store.Put(ctx, key, strings.NewReader("v1")); err != nil {
+			t.Fatalf("Put %s: %v", key, err)
+		}
 	}
-	tmp := filepath.Join(store.config.BasePath, tempFilePrefix+"in-progress")
+	tmp := filepath.Join(store.config.BasePath, tempFilePrefix+uuid.New().String())
 	if err := os.WriteFile(tmp, []byte("partial"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -227,8 +232,42 @@ func TestLocalList_SkipsInProgressTempFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(list.Files) != 1 || list.Files[0].Path != "doc.txt" {
-		t.Errorf("List = %+v, want only doc.txt", list.Files)
+	got := make([]string, 0, len(list.Files))
+	for _, f := range list.Files {
+		got = append(got, f.Path)
+	}
+	want := []string{tempFilePrefix + "report.txt", "doc.txt"}
+	if !slices.Equal(slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values(want))) {
+		t.Errorf("List = %v, want %v", got, want)
+	}
+}
+
+// TestLocalPut_OverwriteKeepsFileMode confirms replacing a file (which swaps
+// in a new inode) keeps its permissions instead of resetting them to
+// FilePermissions — overwriting a 0600 file must not make it world-readable.
+func TestLocalPut_OverwriteKeepsFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits")
+	}
+	ctx := context.Background()
+	store := newTestLocalStorage(t)
+	if _, err := store.Put(ctx, "secret.txt", strings.NewReader("v1")); err != nil {
+		t.Fatalf("Put v1: %v", err)
+	}
+	fullPath, _ := store.fullPath("secret.txt")
+	if err := os.Chmod(fullPath, 0o600); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+
+	if _, err := store.Put(ctx, "secret.txt", strings.NewReader("v2")); err != nil {
+		t.Fatalf("Put v2: %v", err)
+	}
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("mode after overwrite = %v, want %v", got, os.FileMode(0o600))
 	}
 }
 

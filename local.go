@@ -250,7 +250,7 @@ func (s *LocalStorage) Put(ctx context.Context, path string, reader io.Reader, o
 			return nil, ErrAlreadyExists
 		}
 	} else {
-		info, err = s.replaceFile(ctx, fullPath, reader)
+		info, err = s.replaceFile(ctx, fullPath, reader, prev) // prev is nil unless it exists
 	}
 	if err != nil {
 		return nil, err
@@ -303,14 +303,38 @@ func checkPutPreconditions(options *PutOptions, prev os.FileInfo, statErr error)
 // tempFilePrefix marks in-progress Put files so List can skip them.
 const tempFilePrefix = ".objstore-tmp-"
 
+// isTempFile reports whether name has exactly the shape replaceFile gives
+// its temporary files, so ordinary objects that merely share the prefix are
+// still listed.
+func isTempFile(name string) bool {
+	rest, ok := strings.CutPrefix(name, tempFilePrefix)
+	if !ok {
+		return false
+	}
+	id, err := uuid.Parse(rest)
+	return err == nil && id.String() == rest
+}
+
 // replaceFile writes reader to a temporary file beside fullPath and renames
 // it into place only once fully written, so a failed or cancelled Put leaves
-// the previous version intact, and readers never see a partial file.
-func (s *LocalStorage) replaceFile(ctx context.Context, fullPath string, reader io.Reader) (os.FileInfo, error) {
+// the previous version intact, and readers never see a partial file. prev is
+// the file being replaced, or nil; its permissions carry over, since the
+// rename swaps in a new inode.
+func (s *LocalStorage) replaceFile(ctx context.Context, fullPath string, reader io.Reader, prev os.FileInfo) (os.FileInfo, error) {
 	tmpPath := filepath.Join(filepath.Dir(fullPath), tempFilePrefix+uuid.New().String())
 	info, err := s.writeNewFile(ctx, tmpPath, reader)
 	if err != nil {
 		return nil, err
+	}
+	if prev != nil && prev.Mode().IsRegular() && prev.Mode().Perm() != info.Mode().Perm() {
+		if err := os.Chmod(tmpPath, prev.Mode().Perm()); err != nil {
+			_ = os.Remove(tmpPath)
+			return nil, fmt.Errorf("%w: %w", ErrPermission, err)
+		}
+		if info, err = os.Stat(tmpPath); err != nil {
+			_ = os.Remove(tmpPath)
+			return nil, err
+		}
 	}
 	if err := os.Rename(tmpPath, fullPath); err != nil {
 		_ = os.Remove(tmpPath)
@@ -550,7 +574,7 @@ func (s *LocalStorage) List(ctx context.Context, prefix string, opts ...ListOpti
 			return nil
 		}
 
-		if info.IsDir() || strings.HasPrefix(info.Name(), tempFilePrefix) {
+		if info.IsDir() || isTempFile(info.Name()) {
 			return nil
 		}
 
