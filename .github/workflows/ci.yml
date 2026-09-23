@@ -55,30 +55,9 @@ jobs:
           flags: ${{ matrix.module }}
           fail_ci_if_error: false
 
-  # ./azure lint has failed seven straight attempts against v2.13.0: five
-  # timeout escalations (5m/10m through 40m/45m), a --concurrency=4/
-  # GOMAXPROCS=4 pin (verified afterwards against a real nproc of 4 — not
-  # the cause), and a wider-margin run that made things worse, not better:
-  # it ran the full 45m job ceiling without golangci-lint's own --timeout=40m
-  # ever firing. A time-based context cancellation not firing regardless of
-  # how long the work takes is evidence of an actual stall, not just slow
-  # analysis — raising the number again was not going to fix that.
-  #
-  # v2.13.0 is also not what this was ever reproduced against locally:
-  # local testing has been on v2.13.2 (already latest) the whole time, which
-  # never showed this. v2.13.1 and v2.13.2 both bumped honnef.co/go/tools
-  # (staticcheck's engine), and v2.13.2 includes "fix: decrease cache
-  # entropy" — plausibly relevant to exactly this. Pinned version now comes
-  # from the Makefile (see below) instead of being hardcoded here a second
-  # time, so bumping it again means editing one place.
-  #
-  # If this still hangs on v2.13.2, the version wasn't it either — next step
-  # is dropping the SSA/whole-program-analysis linters (unused, gocritic,
-  # staticcheck, bodyclose, contextcheck) for ./azure specifically, not
-  # another timeout number.
   lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
     strategy:
       matrix:
         module: [".", "./s3", "./gcs", "./azure"]
@@ -87,20 +66,13 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.27"
-      - name: Report runner CPU/memory (diagnostic for the ./azure lint slowness)
-        if: matrix.module == './azure'
-        run: |
-          echo "nproc: $(nproc)"
-          echo "cpuinfo processors: $(grep -c ^processor /proc/cpuinfo)"
-          go env GOMAXPROCS || true
-          free -h
       - name: Resolve golangci-lint version
         id: golangci-lint-version
         run: echo "version=$(make -s print-golangci-lint-version)" >> "$GITHUB_OUTPUT"
       - uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ steps.golangci-lint-version.outputs.version }}
-          args: --timeout=40m -v
+          args: --timeout=5m
           working-directory: ${{ matrix.module }}
 
   # Structural linting for every Markdown file in the repo. This lives here
