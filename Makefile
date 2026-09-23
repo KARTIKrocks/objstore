@@ -1,6 +1,6 @@
 .PHONY: all setup test test-race coverage lint lint-fix fix fmt fmt-check vet tidy tidy-check build bench clean ci vuln print-golangci-lint-version print-govulncheck-version
 
-GOLANGCI_LINT_VERSION := v2.13.0
+GOLANGCI_LINT_VERSION := v2.13.2
 GOIMPORTS_VERSION := v0.49.0
 GOVULNCHECK_VERSION := v1.7.0
 
