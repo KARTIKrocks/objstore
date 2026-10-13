@@ -123,6 +123,8 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.27"
+          # govulncheck also scans the standard library of the Go in use, so a cached older patch release fails on stdlib advisories already fixed.
+          check-latest: true
       # Version comes from the Makefile so a local `make vuln` and this gate
       # run the same scanner. Nothing bumps it automatically — Dependabot does
       # not track `go install` lines — so refresh GOVULNCHECK_VERSION in the
