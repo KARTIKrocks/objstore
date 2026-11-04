@@ -72,13 +72,13 @@ If the object doesn't exist, the error also matches `ErrNotFound`.
 Treat `ETag` as an opaque string. Only pass it back to the same backend it
 came from, because each backend produces its own format.
 
-| Backend | How it is enforced |
-| ------- | ------------------ |
-| S3 | Native `If-Match` / `If-None-Match`, including multipart uploads |
-| GCS | Generation preconditions; the ETag is resolved to the generation that has it |
-| Azure | Native `If-Match` / `If-None-Match` access conditions |
-| Memory | Under the storage lock |
-| Local | `O_EXCL` for create-only, which also holds across processes. `WithIfMatch` is atomic only against other `Put`s on the same `LocalStorage`, not against other processes or `Copy`/`Move`/`Delete` |
+| Backend | How it is enforced                                                                                                                                                                               |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| S3      | Native `If-Match` / `If-None-Match`, including multipart uploads                                                                                                                                 |
+| GCS     | Generation preconditions; the ETag is resolved to the generation that has it                                                                                                                     |
+| Azure   | Native `If-Match` / `If-None-Match` access conditions                                                                                                                                            |
+| Memory  | Under the storage lock                                                                                                                                                                           |
+| Local   | `O_EXCL` for create-only, which also holds across processes. `WithIfMatch` is atomic only against other `Put`s on the same `LocalStorage`, not against other processes or `Copy`/`Move`/`Delete` |
 
 Some S3-compatible services don't support conditional writes yet. Check your
 provider before relying on them.
