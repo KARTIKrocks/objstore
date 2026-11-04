@@ -1,7 +1,7 @@
 # Documentation versioning
 
 This site is built with `docusaurus-plugin-content-docs`' versioning, but
-objstore is still pre-1.0 (`v0.1.x`) — under semver, *any* `0.x` release can
+objstore is still pre-1.0 (`v0.1.x`) — under semver, _any_ `0.x` release can
 change documented behaviour, so snapshotting every minor would mean
 snapshotting almost every release. That defeats the point, so versioning
 stays off until `v1.0.0`. Until then, `docs/` is simply "current" and serves
@@ -15,8 +15,8 @@ change, not a migration.
 
 ### 1. Snapshot when a release changes documented behaviour — not on every release
 
-A snapshot exists to answer one question: *what was true before this release
-broke it?* If nothing broke, the snapshot is a byte-identical copy that has
+A snapshot exists to answer one question: _what was true before this release
+broke it?_ If nothing broke, the snapshot is a byte-identical copy that has
 to be maintained forever.
 
 **The test:** does this release make an existing page **wrong for someone on
